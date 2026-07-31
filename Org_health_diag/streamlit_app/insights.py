@@ -1,0 +1,71 @@
+# -*- coding: utf-8 -*-
+"""규칙 기반 AI 리포트 문장 생성기.
+
+실제 LLM(Report Writer / Action Guide Agent) 호출을 대체하는 로컬 데모 로직이다.
+문항 해석 사전(catalog.MID_INTERPRETATION)과 06_guardrails.md의 표현 원칙을 따라
+점수·등급·순위·개인 추정 표현 없이 "가능성"과 "점검 방향" 중심 문장을 만든다.
+"""
+
+from catalog import MID_INTERPRETATION
+
+
+def _dominant_bucket(ratio: dict) -> str:
+    return max(("긍정", "중립", "부정"), key=lambda k: ratio.get(k, 0))
+
+
+def category_commentary(mid: str, ratio: dict) -> str:
+    card = MID_INTERPRETATION[mid]
+    dominant = _dominant_bucket(ratio)
+    lead = {
+        "긍정": f"{mid} 영역은 긍정 응답 비중이 상대적으로 높게 나타났습니다.",
+        "중립": f"{mid} 영역은 중립 응답 비중이 상대적으로 높게 나타났습니다.",
+        "부정": f"{mid} 영역은 부정 응답 비중이 상대적으로 높게 나타났습니다.",
+    }[dominant]
+    return f"{lead} {card[dominant]}"
+
+
+def executive_summary(org: str, overall: dict, top_pos_df, top_neg_df) -> str:
+    pos_names = ", ".join(top_pos_df["중분류"].tolist())
+    neg_names = ", ".join(top_neg_df["중분류"].tolist())
+    return (
+        f"{org}은(는) 2026년 진단에서 전체 긍정 응답 비중 {overall['긍정']}%, "
+        f"중립 {overall['중립']}%, 부정 {overall['부정']}%로 나타났습니다. "
+        f"특히 {pos_names} 영역에서 긍정 응답 비중이 상대적으로 높게 나타나, "
+        f"해당 영역의 구성원 경험이 비교적 안정적으로 형성되어 있을 가능성을 시사합니다. "
+        f"반면 {neg_names} 영역은 상대적으로 부정 응답 비중이 높아, "
+        f"구성원이 관련 영역에서 불편을 경험했을 가능성이 있어 확인이 필요합니다. "
+        f"이 리포트는 특정 원인을 단정하지 않으며, 조직장이 구성원과 나눌 대화의 "
+        f"출발점으로 활용하는 것을 권장합니다."
+    )
+
+
+def trend_commentary(mid: str, trend_df):
+    pos_2024 = float(trend_df.loc[trend_df["year"] == "2024", "긍정"].iloc[0])
+    pos_2026 = float(trend_df.loc[trend_df["year"] == "2026", "긍정"].iloc[0])
+    delta = round(pos_2026 - pos_2024, 1)
+    if delta >= 5:
+        tag = "개선 신호"
+        text = f"2024년 대비 2026년 긍정 응답 비중이 {delta}%p 높아져, {mid} 영역에서 개선 신호가 관찰됩니다."
+    elif delta <= -5:
+        tag = "약화 신호"
+        text = f"2024년 대비 2026년 긍정 응답 비중이 {abs(delta)}%p 낮아져, {mid} 영역에서 약화 신호가 관찰됩니다."
+    else:
+        tag = "큰 변화 없음"
+        text = f"2024년부터 2026년까지 {mid} 영역의 긍정 응답 비중은 큰 변화 없이 유지되고 있습니다."
+    return tag, text, delta
+
+
+def signals_to_watch(top_neg_df) -> list:
+    signals = []
+    for _, row in top_neg_df.iterrows():
+        card = MID_INTERPRETATION[row["중분류"]]
+        signals.append(f"**{row['중분류']}** (부정 {row['부정']}%) — {card['부정']}")
+    return signals
+
+
+def conversation_topics(top_neg_df) -> list:
+    topics = []
+    for _, row in top_neg_df.iterrows():
+        card = MID_INTERPRETATION[row["중분류"]]
+        topics.append(f"[{row['중분류']}] {card['방향']}")
+    return topics
