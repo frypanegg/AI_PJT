@@ -11,41 +11,49 @@ import csv
 import datetime as dt
 import os
 
+import pandas as pd
+
 # key(URL 파라미터용 짧은 코드) -> 조직 정보 + 데모 인증코드(생년월일 6자리)
 ORG_REGISTRY = {
     "ss": {
         "company": "포스코",
         "org": "철강사업실",
+        "manager_name": "김민준",
         "birth_code": "850315",
         "target_headcount": 80,
     },
     "tp": {
         "company": "포스코",
         "org": "기술기획실",
+        "manager_name": "이서연",
         "birth_code": "880622",
         "target_headcount": 75,
     },
     "mi": {
         "company": "포스코",
         "org": "경영혁신실",
+        "manager_name": "박지훈",
         "birth_code": "911104",
         "target_headcount": 68,
     },
     "sd": {
         "company": "포스코이앤씨",
         "org": "철강설계실",
+        "manager_name": "최유진",
         "birth_code": "870709",
         "target_headcount": 80,
     },
     "pd": {
         "company": "포스코이앤씨",
         "org": "플랜트설계실",
+        "manager_name": "정승우",
         "birth_code": "900418",
         "target_headcount": 75,
     },
     "cs": {
         "company": "포스코이앤씨",
         "org": "건설전략실",
+        "manager_name": "한소희",
         "birth_code": "930227",
         "target_headcount": 68,
     },
@@ -54,6 +62,13 @@ ORG_REGISTRY = {
 MIN_RESPONDENTS = 10  # 소수 응답 조직 결과 숨김 기준 (06_guardrails.md)
 
 LOG_PATH = os.path.join(os.path.dirname(__file__), "logs", "access_log.csv")
+
+# 데모용 관리자 계정. 실제 운영 환경에서는 사내 SSO + 관리자 권한 그룹으로 대체해야 한다.
+ADMIN_CREDENTIALS = {"id": "sum", "password": "sum1420"}
+
+
+def verify_admin(user_id: str, password: str) -> bool:
+    return user_id.strip() == ADMIN_CREDENTIALS["id"] and password == ADMIN_CREDENTIALS["password"]
 
 
 def org_options():
@@ -78,3 +93,37 @@ def log_access(org_key: str, event: str):
             writer.writerow(["timestamp", "org_key", "org", "event"])
         org_name = ORG_REGISTRY.get(org_key, {}).get("org", org_key)
         writer.writerow([dt.datetime.now().isoformat(timespec="seconds"), org_key, org_name, event])
+
+
+def read_access_log() -> pd.DataFrame:
+    """접근 로그 CSV를 읽는다. 파일이 없으면 빈 DataFrame(컬럼만 존재)을 반환한다."""
+    columns = ["timestamp", "org_key", "org", "event"]
+    if not os.path.exists(LOG_PATH):
+        return pd.DataFrame(columns=columns)
+    return pd.read_csv(LOG_PATH, encoding="utf-8-sig")
+
+
+def manager_activity_table() -> pd.DataFrame:
+    """부서장별 접근 이력 요약: 회사명·부서명·조직장명·로그인/챗봇/다운로드 이력."""
+    log_df = read_access_log()
+
+    def _summary(org_key: str, event: str) -> str:
+        rows = log_df[(log_df["org_key"] == org_key) & (log_df["event"] == event)]
+        if rows.empty:
+            return "이력 없음"
+        last = rows["timestamp"].max()
+        return f"{len(rows)}회 (최근 {last[:16].replace('T', ' ')})"
+
+    rows = []
+    for org_key, entry in ORG_REGISTRY.items():
+        rows.append(
+            {
+                "회사명": entry["company"],
+                "부서명": entry["org"],
+                "조직장명": entry["manager_name"],
+                "로그인 이력": _summary(org_key, "login_success"),
+                "챗봇 채팅 이력": _summary(org_key, "chat_message"),
+                "보고서 다운로드 이력": _summary(org_key, "report_download"),
+            }
+        )
+    return pd.DataFrame(rows)

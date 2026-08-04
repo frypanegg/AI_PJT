@@ -24,11 +24,143 @@ from catalog import (
 )
 from auth import MIN_RESPONDENTS
 
-EXCEL_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "dummy_data", "organization_health_survey_2024_2026_extended.xlsx"
+_DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "dummy_data")
+
+# 기본 제공 더미 데이터 (관리자가 파일을 올리지 않았을 때 사용)
+DEFAULT_EXCEL_PATH = os.path.join(
+    _DATA_DIR, "organization_health_survey_2024_2026_extended.xlsx"
 )
+# 관리자 화면에서 업로드한 Raw Data가 저장되는 위치
+UPLOADED_EXCEL_PATH = os.path.join(_DATA_DIR, "uploaded_survey.xlsx")
 
 YEARS = ["2024", "2025", "2026"]
+
+
+def active_excel_path() -> str:
+    """현재 사용 중인 엑셀 경로. 업로드본이 있으면 그것을 우선 사용한다."""
+    return UPLOADED_EXCEL_PATH if os.path.exists(UPLOADED_EXCEL_PATH) else DEFAULT_EXCEL_PATH
+
+
+def is_using_uploaded() -> bool:
+    return os.path.exists(UPLOADED_EXCEL_PATH)
+
+
+def validate_workbook(path: str):
+    """업로드된 엑셀이 앱이 기대하는 구조인지 검사한다.
+
+    반환: (ok, errors, warnings, stats)
+    - errors 가 하나라도 있으면 해당 파일은 사용할 수 없다.
+    - warnings 는 사용은 가능하지만 화면에 결과가 일부 비어 보일 수 있는 경우.
+    """
+    from auth import ORG_REGISTRY
+
+    errors, warnings, stats = [], [], {}
+    found_orgs, total_rows, found_qids = set(), 0, set()
+
+    # Windows에서는 열린 파일 핸들이 남아 있으면 임시파일 교체(os.replace)가 실패하므로,
+    # 검증에 필요한 값만 뽑고 반드시 핸들을 닫는다.
+    try:
+        with pd.ExcelFile(path) as xls:
+            sheet_names = list(xls.sheet_names)
+            missing_sheets = [y for y in YEARS if y not in sheet_names]
+            if missing_sheets:
+                errors.append(
+                    f"연도 시트가 없습니다: {', '.join(missing_sheets)} "
+                    f"(현재 시트: {', '.join(map(str, sheet_names))})"
+                )
+                return False, errors, warnings, stats
+
+            for year in YEARS:
+                raw = pd.read_excel(xls, sheet_name=year, header=None)
+                if raw.shape[0] < 3:
+                    errors.append(
+                        f"'{year}' 시트에 응답 데이터 행이 없습니다. "
+                        "(1행 문항ID, 2행 문항 원문, 3행부터 응답)"
+                    )
+                    continue
+
+                header = [str(c) for c in raw.iloc[0, :].tolist()]
+                for required in ("회사명", "조직명"):
+                    if required not in header:
+                        errors.append(f"'{year}' 시트 1행에 '{required}' 컬럼이 없습니다.")
+
+                body = raw.iloc[2:, :].copy()
+                body.columns = header
+                total_rows += len(body)
+
+                if "조직명" in header:
+                    found_orgs.update(body["조직명"].dropna().astype(str).unique())
+                found_qids.update(q for q in QUESTION_ORDER if q in header)
+    except Exception as exc:  # 손상 파일 · 비엑셀 파일
+        return False, [f"엑셀 파일을 읽을 수 없습니다: {exc}"], [], {}
+
+    if errors:
+        return False, errors, warnings, stats
+
+    if not found_qids:
+        errors.append(
+            "32개 채택 문항(OS02, OM12 …) 중 일치하는 문항 컬럼을 찾지 못했습니다. "
+            "1행에 문항ID가 있는지 확인해 주세요."
+        )
+        return False, errors, warnings, stats
+
+    missing_qids = [q for q in QUESTION_ORDER if q not in found_qids]
+    if missing_qids:
+        warnings.append(
+            f"32개 문항 중 {len(missing_qids)}개가 파일에 없습니다: {', '.join(missing_qids[:8])}"
+            + (" …" if len(missing_qids) > 8 else "")
+        )
+
+    registry_orgs = {v["org"] for v in ORG_REGISTRY.values()}
+    matched = found_orgs & registry_orgs
+    if not matched:
+        errors.append(
+            "파일의 조직명이 시스템에 등록된 조직과 하나도 일치하지 않습니다. "
+            f"등록 조직: {', '.join(sorted(registry_orgs))} / "
+            f"파일 조직: {', '.join(sorted(found_orgs)) or '없음'}"
+        )
+        return False, errors, warnings, stats
+
+    unmatched_registry = registry_orgs - found_orgs
+    if unmatched_registry:
+        warnings.append(
+            f"등록된 조직 중 {len(unmatched_registry)}개가 파일에 없어 해당 부서는 결과가 표시되지 않습니다: "
+            f"{', '.join(sorted(unmatched_registry))}"
+        )
+
+    stats = {
+        "시트": ", ".join(YEARS),
+        "총 응답 행": total_rows,
+        "인식된 문항 수": f"{len(found_qids)} / {len(QUESTION_ORDER)}",
+        "일치 조직 수": f"{len(matched)} / {len(registry_orgs)}",
+    }
+    return True, errors, warnings, stats
+
+
+def save_uploaded_workbook(file_bytes: bytes):
+    """업로드 파일을 검증한 뒤 저장한다. 반환: (ok, errors, warnings, stats)"""
+    os.makedirs(_DATA_DIR, exist_ok=True)
+    tmp_path = UPLOADED_EXCEL_PATH + ".tmp"
+    with open(tmp_path, "wb") as f:
+        f.write(file_bytes)
+
+    ok, errors, warnings, stats = validate_workbook(tmp_path)
+    if not ok:
+        os.remove(tmp_path)  # 검증 실패 시 기존 데이터를 덮어쓰지 않는다
+        return False, errors, warnings, stats
+
+    os.replace(tmp_path, UPLOADED_EXCEL_PATH)
+    clear_data_cache()
+    return True, errors, warnings, stats
+
+
+def reset_to_default_workbook() -> bool:
+    """업로드본을 삭제하고 기본 더미 데이터로 되돌린다."""
+    if os.path.exists(UPLOADED_EXCEL_PATH):
+        os.remove(UPLOADED_EXCEL_PATH)
+        clear_data_cache()
+        return True
+    return False
 
 
 def _bucket(value: str) -> str:
@@ -42,16 +174,21 @@ def _bucket(value: str) -> str:
 
 
 @st.cache_data(show_spinner=False)
-def load_data():
-    """엑셀을 읽어 (객관식 long-format df, 주관식 long-format df, 응답인원 df)를 반환."""
-    xls = pd.ExcelFile(EXCEL_PATH)
+def _load_from(path: str, _mtime: float):
+    """엑셀을 읽어 (객관식 long-format df, 주관식 long-format df, 응답인원 df)를 반환.
 
+    path/_mtime 을 캐시 키로 써서, 파일이 교체되면 자동으로 다시 읽는다.
+    """
     obj_rows = []
     text_rows = []
     count_rows = []
 
+    # with 문으로 핸들을 닫아, 이후 업로드 파일 교체가 Windows에서 막히지 않게 한다.
+    with pd.ExcelFile(path) as xls:
+        sheets = {year: pd.read_excel(xls, sheet_name=year, header=None) for year in YEARS}
+
     for year in YEARS:
-        raw = pd.read_excel(xls, sheet_name=year, header=None)
+        raw = sheets[year]
         header = raw.iloc[0, :].tolist()
         body = raw.iloc[2:, :].copy()
         body.columns = header
@@ -95,6 +232,16 @@ def load_data():
     )
 
     return obj_df, text_df, count_df
+
+
+def load_data():
+    """현재 활성 엑셀(업로드본 우선)을 읽어 집계 DataFrame 3종을 반환한다."""
+    path = active_excel_path()
+    return _load_from(path, os.path.getmtime(path))
+
+
+def clear_data_cache():
+    _load_from.clear()
 
 
 def is_suppressed(count_df: pd.DataFrame, year: str, org: str) -> bool:
@@ -147,6 +294,12 @@ def company_wide_ratio(obj_df: pd.DataFrame, year: str, mid: str | None = None) 
     sub = obj_df[obj_df["year"] == year]
     if mid:
         sub = sub[sub["mid"] == mid]
+    return ratio_from_subset(sub)
+
+
+def company_wide_question_ratio(obj_df: pd.DataFrame, year: str, question_id: str) -> dict:
+    """전사(모든 조직 통합) 문항 단위 평균 비중."""
+    sub = obj_df[(obj_df["year"] == year) & (obj_df["question_id"] == question_id)]
     return ratio_from_subset(sub)
 
 

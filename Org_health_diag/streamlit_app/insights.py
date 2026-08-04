@@ -8,20 +8,28 @@
 
 from catalog import MID_INTERPRETATION
 
+# 전사 평균과의 차이가 이 값(%p) 미만이면 "비슷한 수준"으로 본다.
+CATEGORY_DIFF_THRESHOLD = 3.0
 
-def _dominant_bucket(ratio: dict) -> str:
-    return max(("긍정", "중립", "부정"), key=lambda k: ratio.get(k, 0))
 
+def category_commentary(mid: str, ratio: dict, company_avg_positive: float) -> str:
+    """전사 평균(긍정 비중) 대비 해당 영역이 양호/관찰 필요/비슷한 수준인지 평가한다.
 
-def category_commentary(mid: str, ratio: dict) -> str:
+    조직 자체 응답에서 어느 버킷이 큰지가 아니라, 같은 영역의 전사 평균과 비교해
+    상대적으로 판단한다 (06_guardrails.md에 따라 절대 점수·등급은 사용하지 않음).
+    """
     card = MID_INTERPRETATION[mid]
-    dominant = _dominant_bucket(ratio)
-    lead = {
-        "긍정": f"{mid} 영역은 긍정 응답 비중이 상대적으로 높게 나타났습니다.",
-        "중립": f"{mid} 영역은 중립 응답 비중이 상대적으로 높게 나타났습니다.",
-        "부정": f"{mid} 영역은 부정 응답 비중이 상대적으로 높게 나타났습니다.",
-    }[dominant]
-    return f"{lead} {card[dominant]}"
+    diff = round(ratio["긍정"] - company_avg_positive, 1)
+    if diff >= CATEGORY_DIFF_THRESHOLD:
+        lead = f"{mid} 영역은 전사 평균 대비 긍정 응답 비중이 {diff:+.1f}%p 높아 양호한 편입니다."
+        detail = card["긍정"]
+    elif diff <= -CATEGORY_DIFF_THRESHOLD:
+        lead = f"{mid} 영역은 전사 평균 대비 긍정 응답 비중이 {diff:.1f}%p 낮아 관찰이 필요합니다."
+        detail = card["부정"]
+    else:
+        lead = f"{mid} 영역은 전사 평균과 비슷한 수준입니다 ({diff:+.1f}%p)."
+        detail = card["중립"]
+    return f"{lead} {detail}"
 
 
 def executive_summary(org: str, overall: dict, top_pos_df, top_neg_df) -> str:

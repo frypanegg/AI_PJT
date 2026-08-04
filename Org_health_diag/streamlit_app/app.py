@@ -5,6 +5,8 @@
 부서장 본인 조직의 2026 진단 리포트를 스크롤로 확인한다.
 """
 
+import os
+
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -14,13 +16,11 @@ import chatbot
 import data
 import insights
 import report_export
+import web_advisor
 from catalog import (
     MID_CATEGORY_ORDER,
-    MID_TO_MAJOR,
     MID_INTERPRETATION,
     OPEN_TEXT_QUESTIONS,
-    QUESTION_ORDER,
-    QUESTION_TO_MID,
 )
 
 st.set_page_config(
@@ -83,6 +83,32 @@ def padded_y_range(*value_lists):
     return [max(0, lo - pad), min(100, hi + pad)]
 
 
+def trend_bucket_chart(trend_df: pd.DataFrame, bucket: str):
+    """긍정/중립/부정을 각각 독립된 스케일로 보여주는 단일 시리즈 3개년 추이 차트."""
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=trend_df["year"],
+            y=trend_df[bucket],
+            mode="lines+markers",
+            line=dict(color=COLORS[bucket], width=3),
+            marker=dict(size=9),
+            hovertemplate="%{x}년 " + bucket + " %{y}%<extra></extra>",
+        )
+    )
+    fig.update_layout(
+        title=dict(text=bucket, font=dict(size=17, color=COLORS[bucket])),
+        height=260,
+        margin=dict(t=45, b=10, l=10, r=10),
+        yaxis=dict(range=padded_y_range(trend_df[bucket]), title="비중(%)"),
+        xaxis=dict(type="category"),
+        font=PLOTLY_FONT,
+        hoverlabel=dict(font_size=15),
+        showlegend=False,
+    )
+    return fig
+
+
 def anchor(id_: str):
     st.markdown(f'<div id="{id_}"></div>', unsafe_allow_html=True)
 
@@ -95,11 +121,30 @@ def badge(bucket: str, value: float) -> str:
     return f'<span class="oh-badge" style="background:{COLORS[bucket]}">{bucket} {value}%</span>'
 
 
+def color_legend() -> str:
+    swatches = "".join(
+        f'<span style="display:inline-block;width:12px;height:12px;background:{COLORS[b]};'
+        f'border-radius:3px;margin-right:5px;"></span>{b}&nbsp;&nbsp;&nbsp;'
+        for b in BUCKETS
+    )
+    swatches += (
+        '<span style="display:inline-block;width:9px;height:9px;background:black;'
+        'border-radius:50%;margin-right:5px;"></span>전사 평균(긍정%)'
+    )
+    return swatches
+
+
 # ---------------------------------------------------------------------------
 # 인증 페이지
 # ---------------------------------------------------------------------------
 
 def login_page():
+    top_l, top_r = st.columns([5, 1])
+    with top_r:
+        if st.button("🔐 Admin", use_container_width=True):
+            st.session_state.show_admin_login = True
+            st.rerun()
+
     left, mid, right = st.columns([1, 1.4, 1])
     with mid:
         st.markdown("## 🧭 2026 조직건강도 진단")
@@ -139,11 +184,39 @@ def login_page():
                 st.error("조직 또는 생년월일 정보가 일치하지 않습니다. 다시 확인해 주세요.")
 
 
+def admin_login_page():
+    left, mid, right = st.columns([1, 1.4, 1])
+    with mid:
+        st.markdown("## 🔐 관리자 로그인")
+        st.markdown(
+            '<div class="oh-caption">HR 관리자/경영진 전용 화면입니다. '
+            "부서별 결과 비교와 부서장 접근 이력을 확인할 수 있습니다.</div>",
+            unsafe_allow_html=True,
+        )
+        st.write("")
+
+        with st.form("admin_login_form"):
+            admin_id = st.text_input("관리자 ID")
+            admin_pw = st.text_input("비밀번호", type="password")
+            submitted = st.form_submit_button("관리자 로그인", use_container_width=True)
+
+        if submitted:
+            if auth.verify_admin(admin_id, admin_pw):
+                st.session_state.is_admin = True
+                st.rerun()
+            else:
+                st.error("ID 또는 비밀번호가 일치하지 않습니다.")
+
+        if st.button("← 부서장 로그인으로 돌아가기"):
+            st.session_state.show_admin_login = False
+            st.rerun()
+
+
 # ---------------------------------------------------------------------------
 # 리포트 페이지
 # ---------------------------------------------------------------------------
 
-def donut_chart(ratio: dict):
+def donut_chart(ratio: dict, respondents: int):
     fig = go.Figure(
         data=[
             go.Pie(
@@ -151,7 +224,7 @@ def donut_chart(ratio: dict):
                 values=[ratio[b] for b in BUCKETS],
                 hole=0.55,
                 marker=dict(colors=[COLORS[b] for b in BUCKETS]),
-                hovertemplate="%{label}: %{value}%<br>표본 %{customdata}명<extra></extra>",
+                hovertemplate="%{label}: %{value}%<br>문항 응답 %{customdata}건<extra></extra>",
                 customdata=[ratio["n"]] * 3,
                 textinfo="label+percent",
                 sort=False,
@@ -164,12 +237,21 @@ def donut_chart(ratio: dict):
         showlegend=False,
         font=PLOTLY_FONT,
         hoverlabel=dict(font_size=15),
-        annotations=[dict(text=f"n={ratio['n']}", x=0.5, y=0.5, font_size=19, showarrow=False)],
+        annotations=[
+            dict(text=f"{respondents}명", x=0.5, y=0.5, font_size=19, showarrow=False)
+        ],
     )
     return fig
 
 
-def category_stacked_bar(df: pd.DataFrame, y_col: str, company_avg: pd.DataFrame | None = None):
+def category_stacked_bar(
+    df: pd.DataFrame,
+    y_col: str,
+    company_avg: pd.DataFrame | None = None,
+    height: int | None = None,
+    show_legend: bool = True,
+    show_y_labels: bool = True,
+):
     order = df[y_col].tolist()
     fig = go.Figure()
     for b in BUCKETS:
@@ -202,10 +284,16 @@ def category_stacked_bar(df: pd.DataFrame, y_col: str, company_avg: pd.DataFrame
         )
     fig.update_layout(
         barmode="stack",
-        height=max(340, 38 * len(order)),
+        height=height if height is not None else max(340, 38 * len(order)),
         margin=dict(t=10, b=10, l=10, r=10),
         xaxis=dict(title="응답 비중(%)", range=[0, 100]),
-        yaxis=dict(categoryorder="array", categoryarray=order[::-1], automargin=True),
+        yaxis=dict(
+            categoryorder="array",
+            categoryarray=order[::-1],
+            automargin=True,
+            showticklabels=show_y_labels,
+        ),
+        showlegend=show_legend,
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
         font=PLOTLY_FONT,
         hoverlabel=dict(font_size=15),
@@ -213,23 +301,56 @@ def category_stacked_bar(df: pd.DataFrame, y_col: str, company_avg: pd.DataFrame
     return fig
 
 
-def category_card(row, key_suffix=""):
+def rank_list_html(ranked_items, tone: str = "positive") -> str:
+    rows = []
+    for i, d in enumerate(ranked_items, start=1):
+        sign = "+" if d["delta"] >= 0 else ""
+        if d["delta"] < 0:
+            color = COLORS["부정"]
+        elif tone == "attention":
+            color = "#9a7b00"  # 하락은 아니지만 상대적으로 개선 폭이 작은 항목 (주의색)
+        else:
+            color = COLORS["긍정"]
+        rows.append(
+            '<div style="display:flex; align-items:center; padding:14px 4px; '
+            'border-bottom:1px solid rgba(128,128,128,0.15);">'
+            f'<div style="font-size:1.5rem; font-weight:800; width:2.4rem; color:#9aa1ab;">{i}</div>'
+            f'<div style="flex:1; font-size:1.2rem; font-weight:600;">{d["중분류"]}</div>'
+            f'<div style="font-size:1.4rem; font-weight:800; color:{color};">{sign}{d["delta"]}%p</div>'
+            "</div>"
+        )
+    return "".join(rows)
+
+
+def proportion_bar(row) -> str:
+    return (
+        '<div style="display:flex; height:16px; border-radius:5px; overflow:hidden; '
+        'margin:8px 0 10px 0;">'
+        f'<div style="width:{row["긍정"]}%; background:{COLORS["긍정"]};"></div>'
+        f'<div style="width:{row["중립"]}%; background:{COLORS["중립"]};"></div>'
+        f'<div style="width:{row["부정"]}%; background:{COLORS["부정"]};"></div>'
+        "</div>"
+    )
+
+
+def category_card(row, company_avg_positive: float):
     mid = row["중분류"]
     with st.container():
         st.markdown(
-            f'<div class="oh-card"><b>{mid}</b><br>'
+            f'<div class="oh-card"><b style="font-size:1.15rem;">{mid}</b>'
+            + proportion_bar(row)
             + badge("긍정", row["긍정"])
             + badge("중립", row["중립"])
             + badge("부정", row["부정"])
             + "</div>",
             unsafe_allow_html=True,
         )
-        with st.popover(f"자세히 보기 · {mid}", use_container_width=True):
+        with st.popover("자세히 보기", use_container_width=True):
             card = MID_INTERPRETATION[mid]
             st.markdown(f"**정의**  \n{card['정의']}")
-            st.markdown(insights.category_commentary(mid, row))
+            st.markdown(insights.category_commentary(mid, row, company_avg_positive))
             st.markdown(f"**권장 대화 방향**  \n{card['방향']}")
-            st.caption("점수·등급·순위는 제공하지 않으며, 특정 원인을 단정하지 않습니다.")
+            st.caption("전사 평균과 비교한 참고용 해석이며, 점수·등급·순위는 제공하지 않습니다.")
 
 
 def render_report():
@@ -283,6 +404,15 @@ def render_report():
     top_pos = data.top3_mid(obj_df, "2026", org, by="긍정", ascending=False)
     top_neg = data.top3_mid(obj_df, "2026", org, by="부정", ascending=False)
 
+    mid_df = data.all_mid_ratios(obj_df, "2026", org)
+    company_avg_rows = []
+    for mid in MID_CATEGORY_ORDER:
+        company_avg_rows.append({"중분류": mid, **data.company_wide_ratio(obj_df, "2026", mid)})
+    company_avg_df = pd.DataFrame(company_avg_rows)
+
+    def avg_positive_for(mid: str) -> float:
+        return float(company_avg_df.loc[company_avg_df["중분류"] == mid, "긍정"].iloc[0])
+
     # ---- Section 1: 2026 요약 ----
     anchor("summary")
     section_title("1. 2026 진단 요약")
@@ -294,17 +424,19 @@ def render_report():
 
     c1, c2 = st.columns([1, 1.6])
     with c1:
-        st.plotly_chart(donut_chart(overall), use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(
+            donut_chart(overall, respondents), use_container_width=True, config={"displayModeBar": False}
+        )
     with c2:
         cc1, cc2 = st.columns(2)
         with cc1:
             st.markdown("**긍정 응답 Top3 영역**")
             for _, row in top_pos.iterrows():
-                category_card(row)
+                category_card(row, avg_positive_for(row["중분류"]))
         with cc2:
             st.markdown("**부정 응답 Top3 영역**")
             for _, row in top_neg.iterrows():
-                category_card(row)
+                category_card(row, avg_positive_for(row["중분류"]))
 
     st.markdown("**주관식 Top3 요약** (원문 대신 반복적으로 나타난 응답 경향만 요약)")
     t1, t2, t3 = st.columns(3)
@@ -324,39 +456,44 @@ def render_report():
     anchor("category")
     section_title("2. 카테고리별 2026 결과")
     st.caption("점 표시는 전사(전체 조직 통합) 평균 긍정 비중입니다. 조직 간 순위 비교 목적이 아닙니다.")
-
-    mid_df = data.all_mid_ratios(obj_df, "2026", org)
-    company_avg_rows = []
-    for mid in MID_CATEGORY_ORDER:
-        company_avg_rows.append({"중분류": mid, **data.company_wide_ratio(obj_df, "2026", mid)})
-    company_avg_df = pd.DataFrame(company_avg_rows)
+    st.markdown(color_legend(), unsafe_allow_html=True)
+    st.write("")
 
     major_tab1, major_tab2 = st.tabs(["직원 몰입 수준", "회사 지원 수준"])
     for tab, major in zip((major_tab1, major_tab2), ["직원 몰입 수준", "회사 지원 수준"]):
         with tab:
             sub = mid_df[mid_df["대분류"] == major].reset_index(drop=True)
-            sub_avg = company_avg_df[company_avg_df["중분류"].isin(sub["중분류"])]
-            st.plotly_chart(
-                category_stacked_bar(sub, "중분류", sub_avg),
-                use_container_width=True,
-                config={"displayModeBar": False},
-            )
-            picked = st.selectbox(
-                "중분류 선택해서 해석 보기", sub["중분류"].tolist(), key=f"pick_{major}"
-            )
-            row = sub[sub["중분류"] == picked].iloc[0]
-            card = MID_INTERPRETATION[picked]
-            st.markdown(
-                badge("긍정", row["긍정"]) + badge("중립", row["중립"]) + badge("부정", row["부정"]),
-                unsafe_allow_html=True,
-            )
-            st.write(insights.category_commentary(picked, row))
-            st.caption(f"권장 대화 방향: {card['방향']}")
+            for _, row in sub.iterrows():
+                mid = row["중분류"]
+                avg_row = company_avg_df[company_avg_df["중분류"] == mid]
+                card = MID_INTERPRETATION[mid]
+                st.markdown(f"**{mid}**")
+                st.plotly_chart(
+                    category_stacked_bar(
+                        pd.DataFrame([row]),
+                        "중분류",
+                        avg_row,
+                        height=110,
+                        show_legend=False,
+                        show_y_labels=False,
+                    ),
+                    use_container_width=True,
+                    config={"displayModeBar": False},
+                )
+                st.markdown(
+                    badge("긍정", row["긍정"]) + badge("중립", row["중립"]) + badge("부정", row["부정"]),
+                    unsafe_allow_html=True,
+                )
+                st.write(insights.category_commentary(mid, row, avg_row["긍정"].iloc[0]))
+                st.caption(f"권장 대화 방향: {card['방향']}")
+                st.divider()
 
     # ---- Section 3: 32개 문항별 근거 ----
     anchor("questions")
     section_title("3. 32개 문항별 근거")
     st.caption("점수·등급·순위는 표시하지 않으며 문항별 긍정/중립/부정 비중만 제공합니다.")
+    st.markdown(color_legend(), unsafe_allow_html=True)
+    st.write("")
 
     q_df = data.all_question_ratios(obj_df, "2026", org)
     filt_col, sort_col = st.columns([1, 1])
@@ -368,54 +505,42 @@ def render_report():
     view = q_df if mid_filter == "전체" else q_df[q_df["중분류"] == mid_filter]
     view = view.sort_values("긍정" if sort_by == "긍정 높은 순" else "부정", ascending=False)
 
-    st.plotly_chart(
-        category_stacked_bar(view, "문항"),
-        use_container_width=True,
-        config={"displayModeBar": False},
-    )
-    st.caption("문항 문구가 길어 그래프 막대 영역이 화면 전체를 채우지 않을 수 있습니다.")
-
-    with st.expander("문항 해석 보기"):
-        for _, row in view.iterrows():
-            qid = row["문항ID"]
-            mid = row["중분류"]
-            st.markdown(
-                f"**{row['문항']}** ({qid} · {mid}) — "
-                + badge("긍정", row["긍정"])
-                + badge("중립", row["중립"])
-                + badge("부정", row["부정"]),
-                unsafe_allow_html=True,
-            )
-            st.caption(insights.category_commentary(mid, row))
-            st.divider()
+    for _, row in view.iterrows():
+        qid = row["문항ID"]
+        mid = row["중분류"]
+        q_avg = data.company_wide_question_ratio(obj_df, "2026", qid)
+        st.plotly_chart(
+            category_stacked_bar(
+                pd.DataFrame([row]), "문항", height=130, show_legend=False, show_y_labels=True
+            ),
+            use_container_width=True,
+            config={"displayModeBar": False},
+        )
+        st.markdown(
+            f"`{qid}` · {mid} — "
+            + badge("긍정", row["긍정"])
+            + badge("중립", row["중립"])
+            + badge("부정", row["부정"]),
+            unsafe_allow_html=True,
+        )
+        st.caption(insights.category_commentary(mid, row, q_avg["긍정"]))
+        st.divider()
 
     # ---- Section 4: 3개년 변화 분석 ----
     anchor("trend")
     section_title("4. 3개년 변화 분석 (2024–2026)")
 
     overall_trend = data.three_year_trend(obj_df, org, level="overall")
-    fig_overall = go.Figure()
-    for b in BUCKETS:
-        fig_overall.add_trace(
-            go.Scatter(
-                x=overall_trend["year"],
-                y=overall_trend[b],
-                mode="lines+markers",
-                name=b,
-                line=dict(color=COLORS[b], width=3),
-                hovertemplate="%{x}년 " + b + " %{y}%<extra></extra>",
+    st.markdown("**전체 응답 비중 추이**")
+    st.caption("긍정/중립/부정을 각각 독립된 축으로 확대해, 작은 변화도 보이도록 했습니다 (0~100 공통 척도 아님).")
+    ov_cols = st.columns(3)
+    for col, b in zip(ov_cols, BUCKETS):
+        with col:
+            st.plotly_chart(
+                trend_bucket_chart(overall_trend, b),
+                use_container_width=True,
+                config={"displayModeBar": False},
             )
-        )
-    fig_overall.update_layout(
-        height=340,
-        margin=dict(t=10, b=10, l=10, r=10),
-        yaxis=dict(title="비중(%)", range=padded_y_range(*[overall_trend[b] for b in BUCKETS])),
-        xaxis=dict(type="category"),
-        font=PLOTLY_FONT,
-        hoverlabel=dict(font_size=15),
-    )
-    st.plotly_chart(fig_overall, use_container_width=True, config={"displayModeBar": False})
-    st.caption("Y축은 실제 변동 폭에 맞춰 확대된 범위이며, 0~100 전체 척도가 아닙니다.")
 
     deltas = []
     for mid in MID_CATEGORY_ORDER:
@@ -424,52 +549,38 @@ def render_report():
         deltas.append({"중분류": mid, "tag": tag, "text": text, "trend": trend_df, "delta": delta})
 
     TOP_N_TREND = 5
-    improved = sorted(
-        [d for d in deltas if d["tag"] == "개선 신호"], key=lambda d: d["delta"], reverse=True
-    )[:TOP_N_TREND]
-    worsened = sorted([d for d in deltas if d["tag"] == "약화 신호"], key=lambda d: d["delta"])[
-        :TOP_N_TREND
-    ]
+    ranked_desc = sorted(deltas, key=lambda d: d["delta"], reverse=True)
+    top_improved = ranked_desc[:TOP_N_TREND]
+    least_improved = sorted(deltas, key=lambda d: d["delta"])[:TOP_N_TREND]
 
-    ic, wc = st.columns(2)
-    with ic:
-        st.markdown(f"**좋아진 영역 (상위 {TOP_N_TREND}개)**")
-        if not improved:
-            st.caption("뚜렷한 개선 신호(5%p 이상)가 관찰된 영역이 없습니다.")
-        for d in improved:
-            st.markdown(f"- {d['text']}")
-    with wc:
-        st.markdown(f"**약화된 영역 (상위 {TOP_N_TREND}개)**")
-        if not worsened:
-            st.caption("뚜렷한 약화 신호(5%p 이상)가 관찰된 영역이 없습니다.")
-        for d in worsened:
-            st.markdown(f"- {d['text']}")
+    st.markdown("**2024 → 2026 긍정 응답 비중 변화 순위**")
+    st.caption(
+        "연도별 절대 변화폭은 크지 않아, 오르내림 여부보다 상대적인 순위로 참고하시는 것을 권장합니다."
+    )
+
+    rc1, rc2 = st.columns(2)
+    with rc1:
+        st.markdown("##### 개선 순위 (상위 5개)")
+        st.markdown(rank_list_html(top_improved), unsafe_allow_html=True)
+    with rc2:
+        worst_delta = least_improved[0]["delta"] if least_improved else 0
+        title = "약화 순위 (상위 5개)" if worst_delta < 0 else "관찰이 필요한 영역 (하위 5개)"
+        st.markdown(f"##### {title}")
+        if worst_delta >= 0:
+            st.caption("뚜렷한 하락은 없었지만, 상대적으로 개선 폭이 가장 작았던 영역입니다.")
+        st.markdown(rank_list_html(least_improved, tone="attention"), unsafe_allow_html=True)
 
     st.markdown("**중분류 선택해서 3개년 추이 보기**")
     picked_trend_mid = st.selectbox("중분류", MID_CATEGORY_ORDER, key="trend_pick")
     trend_row = next(d for d in deltas if d["중분류"] == picked_trend_mid)
-    fig_mid = go.Figure()
-    for b in BUCKETS:
-        fig_mid.add_trace(
-            go.Scatter(
-                x=trend_row["trend"]["year"],
-                y=trend_row["trend"][b],
-                mode="lines+markers",
-                name=b,
-                line=dict(color=COLORS[b], width=3),
-                hovertemplate="%{x}년 " + b + " %{y}%<extra></extra>",
+    mid_cols = st.columns(3)
+    for col, b in zip(mid_cols, BUCKETS):
+        with col:
+            st.plotly_chart(
+                trend_bucket_chart(trend_row["trend"], b),
+                use_container_width=True,
+                config={"displayModeBar": False},
             )
-        )
-    fig_mid.update_layout(
-        height=300,
-        margin=dict(t=10, b=10, l=10, r=10),
-        yaxis=dict(range=padded_y_range(*[trend_row["trend"][b] for b in BUCKETS])),
-        xaxis=dict(type="category"),
-        font=PLOTLY_FONT,
-        hoverlabel=dict(font_size=15),
-    )
-    st.plotly_chart(fig_mid, use_container_width=True, config={"displayModeBar": False})
-    st.caption("Y축은 실제 변동 폭에 맞춰 확대된 범위이며, 0~100 전체 척도가 아닙니다.")
     st.caption(trend_row["text"])
 
     consistent_low = [
@@ -524,28 +635,36 @@ def render_report():
         st.session_state.chat_history = [("assistant", chatbot.WELCOME.format(org=org))]
         st.session_state.chat_org = org_key
 
-    chat_box = st.container(height=520, border=True)
+    if web_advisor.available():
+        st.caption("🔎 일반 리더십/조직관리 질문은 웹검색 기반 답변 Tool이 연결되어 있습니다.")
+    else:
+        st.caption("일반 리더십 질문용 웹검색 Tool은 API 키가 설정되지 않아 비활성 상태입니다 (DEMO_GUIDE.md 참고).")
 
-    quick_topics = ["전체 요약", "다음 30일 무엇부터"] + top_neg["중분류"].tolist()
+    quick_topics = ["전체 요약", "다음 30일"] + top_neg["중분류"].tolist()
     quick_cols = st.columns(len(quick_topics))
     for col, label in zip(quick_cols, quick_topics):
         if col.button(label, key=f"quick_{org_key}_{label}", use_container_width=True):
-            reply = chatbot.respond(label, org, overall, mid_df, top_pos, top_neg)
+            with st.spinner("답변 생성 중..."):
+                reply = chatbot.respond(label, org, overall, mid_df, top_pos, top_neg, company_avg_df)
             st.session_state.chat_history.append(("user", label))
             st.session_state.chat_history.append(("assistant", reply))
+            auth.log_access(org_key, "chat_message")
 
+    chat_box = st.container(height=520, border=True)
     with chat_box:
         for role, content in st.session_state.chat_history:
             with st.chat_message(role):
                 st.markdown(content)
 
         user_msg = st.chat_input(
-            "궁금한 조직운영 주제를 입력해보세요 (예: 협업, 성과관리, 가용자원)", key=f"chat_input_{org_key}"
+            "궁금한 조직운영 주제를 입력해보세요 (예: 협업, 성과관리, 리더십 일반)", key=f"chat_input_{org_key}"
         )
     if user_msg:
-        reply = chatbot.respond(user_msg, org, overall, mid_df, top_pos, top_neg)
+        with st.spinner("답변 생성 중..."):
+            reply = chatbot.respond(user_msg, org, overall, mid_df, top_pos, top_neg, company_avg_df)
         st.session_state.chat_history.append(("user", user_msg))
         st.session_state.chat_history.append(("assistant", reply))
+        auth.log_access(org_key, "chat_message")
         st.rerun()
 
     st.divider()
@@ -559,13 +678,15 @@ def render_report():
         executive_summary=insights.executive_summary(org, overall, top_pos, top_neg),
         chat_history=st.session_state.chat_history,
     )
-    st.download_button(
+    downloaded = st.download_button(
         "📩 리포트 파일 다운로드 (요약 + 대화 기록 포함)",
         data=report_html,
         file_name=f"{org}_2026_조직건강도_리포트.html",
         mime="text/html",
         use_container_width=True,
     )
+    if downloaded:
+        auth.log_access(org_key, "report_download")
     st.caption(
         "이 페이지는 로컬 PC 시연용이라 사내 메일 서버에 직접 연결되어 있지 않습니다. "
         "위 버튼으로 리포트와 챗봇 대화 내용을 담은 파일을 다운로드한 뒤, 본인 회사 메일에 "
@@ -581,13 +702,241 @@ def render_report():
 
 
 # ---------------------------------------------------------------------------
+# 관리자 화면
+# ---------------------------------------------------------------------------
+
+def render_data_upload():
+    """Raw Data 엑셀 업로드 · 검증 · 되돌리기 (관리자 전용)."""
+    section_title("1. Raw Data 업로드")
+
+    if data.is_using_uploaded():
+        st.success(
+            "현재 **업로드된 Raw Data**를 사용 중입니다. "
+            f"(파일: `{os.path.basename(data.UPLOADED_EXCEL_PATH)}`)"
+        )
+    else:
+        st.info(
+            "현재 **기본 제공 더미 데이터**를 사용 중입니다. "
+            f"(파일: `{os.path.basename(data.DEFAULT_EXCEL_PATH)}`)"
+        )
+
+    with st.expander("업로드 파일 형식 안내", expanded=False):
+        st.markdown(
+            "- **시트**: `2024`, `2025`, `2026` 3개가 모두 있어야 합니다.\n"
+            "- **1행**: 컬럼 ID (`회사명`, `조직명`, `OS02`, `OM12` … 32개 문항ID, `C1`~`C3`)\n"
+            "- **2행**: 문항 원문 (읽지 않고 건너뜁니다)\n"
+            "- **3행부터**: 응답 데이터 1인 1행\n"
+            "- **응답값**: `전적으로 동의(공감)함` / `동의(공감)함` / `어느 쪽도 아님` / "
+            "`동의(공감)하지 않음` / `전혀 동의(공감)하지 않음`\n"
+            "- **조직명**은 시스템에 등록된 부서명과 일치해야 해당 부서 결과가 표시됩니다."
+        )
+
+    # 되돌리기 후에도 업로더가 이전 파일을 들고 있으면 rerun 직후 그 파일이 다시 적용된다.
+    # key에 세대(generation) 번호를 붙여, 되돌릴 때 위젯 자체를 비운다.
+    gen = st.session_state.get("uploader_generation", 0)
+    uploaded = st.file_uploader(
+        "조직건강도 설문 Raw Data 엑셀 파일 (.xlsx)", type=["xlsx"], key=f"raw_data_uploader_{gen}"
+    )
+
+    if uploaded is not None:
+        signature = f"{uploaded.name}:{uploaded.size}"
+        if st.session_state.get("last_upload_signature") != signature:
+            with st.spinner("파일을 검증하고 있습니다..."):
+                ok, errors, warnings, stats = data.save_uploaded_workbook(uploaded.getvalue())
+            st.session_state.last_upload_signature = signature
+            st.session_state.last_upload_result = (ok, errors, warnings, stats, uploaded.name)
+            if ok:
+                st.rerun()
+
+    result = st.session_state.get("last_upload_result")
+    if result:
+        ok, errors, warnings, stats, fname = result
+        if ok:
+            st.success(f"`{fname}` 적용 완료. 아래 분석 결과와 부서장 리포트에 반영되었습니다.")
+            if stats:
+                cols = st.columns(len(stats))
+                for col, (label, value) in zip(cols, stats.items()):
+                    col.metric(label, value)
+        else:
+            st.error(f"`{fname}` 을(를) 적용하지 못했습니다. 기존 데이터가 그대로 유지됩니다.")
+            for msg in errors:
+                st.markdown(f"- {msg}")
+        for msg in warnings:
+            st.warning(msg)
+
+    if data.is_using_uploaded():
+        if st.button("기본 더미 데이터로 되돌리기"):
+            data.reset_to_default_workbook()
+            st.session_state.pop("last_upload_signature", None)
+            st.session_state.pop("last_upload_result", None)
+            st.session_state.uploader_generation = gen + 1  # 업로더 위젯 초기화
+            st.rerun()
+
+    st.divider()
+
+
+def render_admin():
+    top_l, top_r = st.columns([5, 1])
+    with top_l:
+        st.markdown("## 🔐 관리자 화면")
+        st.caption("Raw Data 관리 · 부서별 결과 비교 · 부서장 접근 이력 (HR 관리자·경영진 전용)")
+    with top_r:
+        if st.button("로그아웃", use_container_width=True, key="admin_logout"):
+            st.session_state.is_admin = False
+            st.session_state.show_admin_login = False
+            st.rerun()
+
+    render_data_upload()
+
+    obj_df, text_df, count_df = data.load_data()
+    company_wide_2026 = data.company_wide_ratio(obj_df, "2026")
+
+    # ---- 2. 부서별 2026 결과 비교 ----
+    section_title("2. 부서별 2026 결과 비교")
+    st.caption(
+        f"점수·등급은 제공하지 않으며, 전사 평균(긍정 {company_wide_2026['긍정']}%) 대비 "
+        f"±{insights.CATEGORY_DIFF_THRESHOLD}%p를 기준으로 우수/관심 필요를 구분합니다. "
+        "문항별 세부 정의는 이 화면의 목적이 아닙니다."
+    )
+
+    dept_rows = []
+    for org_key, entry in auth.ORG_REGISTRY.items():
+        org_name = entry["org"]
+        if data.is_suppressed(count_df, "2026", org_name):
+            continue
+        ratio = data.org_overall_ratio(obj_df, "2026", org_name)
+        respondents = data.respondent_count(count_df, "2026", org_name)
+        diff = round(ratio["긍정"] - company_wide_2026["긍정"], 1)
+        if diff >= insights.CATEGORY_DIFF_THRESHOLD:
+            tag = "🟢 우수 부서"
+        elif diff <= -insights.CATEGORY_DIFF_THRESHOLD:
+            tag = "🔴 관심 필요 부서"
+        else:
+            tag = "⚪ 평균 수준"
+        dept_rows.append(
+            {
+                "회사명": entry["company"],
+                "부서명": org_name,
+                "응답인원": respondents,
+                "긍정%": ratio["긍정"],
+                "중립%": ratio["중립"],
+                "부정%": ratio["부정"],
+                "전사 평균 대비": f"{diff:+.1f}%p",
+                "구분": tag,
+            }
+        )
+    dept_df = pd.DataFrame(dept_rows).sort_values("긍정%", ascending=False).reset_index(drop=True)
+    st.dataframe(dept_df, use_container_width=True, hide_index=True)
+
+    fig = go.Figure()
+    bar_colors = []
+    for tag in dept_df["구분"]:
+        if tag == "🟢 우수 부서":
+            bar_colors.append(COLORS["긍정"])
+        elif tag == "🔴 관심 필요 부서":
+            bar_colors.append(COLORS["부정"])
+        else:
+            bar_colors.append(COLORS["중립"])
+    fig.add_trace(
+        go.Bar(
+            x=dept_df["부서명"],
+            y=dept_df["긍정%"],
+            marker_color=bar_colors,
+            hovertemplate="%{x}<br>긍정 %{y}%<extra></extra>",
+        )
+    )
+    fig.add_hline(
+        y=company_wide_2026["긍정"],
+        line_dash="dash",
+        line_color="black",
+        annotation_text=f"전사 평균 {company_wide_2026['긍정']}%",
+        annotation_position="top left",
+    )
+    fig.update_layout(
+        height=320,
+        margin=dict(t=30, b=10, l=10, r=10),
+        yaxis=dict(title="긍정 비중(%)", range=[0, 100]),
+        font=PLOTLY_FONT,
+        hoverlabel=dict(font_size=15),
+    )
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+    st.divider()
+
+    # ---- 2. 부서별 2024-2026 변화 추이 ----
+    section_title("3. 부서별 2024–2026 변화 추이")
+    st.caption("부서별 긍정 응답 비중의 3개년 추이를 함께 비교합니다.")
+
+    trend_fig = go.Figure()
+    trend_rows = []
+    for org_key, entry in auth.ORG_REGISTRY.items():
+        org_name = entry["org"]
+        if data.is_suppressed(count_df, "2026", org_name):
+            continue
+        trend = data.three_year_trend(obj_df, org_name, level="overall")
+        trend_fig.add_trace(
+            go.Scatter(
+                x=trend["year"],
+                y=trend["긍정"],
+                mode="lines+markers",
+                name=f"{entry['company']}·{org_name}",
+                hovertemplate=f"%{{x}}년 {org_name} 긍정 %{{y}}%<extra></extra>",
+            )
+        )
+        delta = round(
+            float(trend.loc[trend["year"] == "2026", "긍정"].iloc[0])
+            - float(trend.loc[trend["year"] == "2024", "긍정"].iloc[0]),
+            1,
+        )
+        trend_rows.append(
+            {"회사명": entry["company"], "부서명": org_name, "2024→2026 긍정 비중 변화": f"{delta:+.1f}%p"}
+        )
+    trend_fig.update_layout(
+        height=340,
+        margin=dict(t=20, b=10, l=10, r=10),
+        xaxis=dict(type="category"),
+        yaxis=dict(title="긍정 비중(%)"),
+        font=PLOTLY_FONT,
+        hoverlabel=dict(font_size=15),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+    )
+    st.plotly_chart(trend_fig, use_container_width=True, config={"displayModeBar": False})
+
+    trend_df_display = pd.DataFrame(trend_rows).sort_values(
+        "2024→2026 긍정 비중 변화", ascending=False
+    )
+    st.dataframe(trend_df_display, use_container_width=True, hide_index=True)
+
+    st.divider()
+
+    # ---- 3. 부서장별 접근 이력 ----
+    section_title("4. 부서장별 접근 이력")
+    st.caption("로그인 · 챗봇 대화 · 리포트 다운로드 이력을 한눈에 확인합니다 (로컬 접근 로그 기반).")
+    st.dataframe(auth.manager_activity_table(), use_container_width=True, hide_index=True)
+
+    st.divider()
+    st.caption(
+        "본 화면은 시연용 데모이며, 실제 운영 환경에서는 06_guardrails.md에 따라 "
+        "HR 관리자 권한 검증과 접근 로그 감사가 함께 적용되어야 합니다."
+    )
+
+
+# ---------------------------------------------------------------------------
 # 라우팅
 # ---------------------------------------------------------------------------
 
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
+if "is_admin" not in st.session_state:
+    st.session_state.is_admin = False
+if "show_admin_login" not in st.session_state:
+    st.session_state.show_admin_login = False
 
-if st.session_state.authenticated:
+if st.session_state.is_admin:
+    render_admin()
+elif st.session_state.authenticated:
     render_report()
+elif st.session_state.show_admin_login:
+    admin_login_page()
 else:
     login_page()

@@ -1,3 +1,8 @@
 __pycache__/
 *.pyc
 streamlit_app/logs/*.csv
+streamlit_app/.streamlit/secrets.toml
+
+# 관리자 화면에서 업로드한 실제 설문 Raw Data (개인 응답 포함 가능 → 커밋 금지)
+dummy_data/uploaded_survey.xlsx
+dummy_data/uploaded_survey.xlsx.tmp
