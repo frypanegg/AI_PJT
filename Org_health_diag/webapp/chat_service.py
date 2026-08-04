@@ -43,8 +43,9 @@ def respond(user_text: str, org_key: str) -> dict:
     if any(k in lowered for k in GREETING_KEYWORDS):
         return {"text": WELCOME.format(org=org), "source": "info"}
 
-    mids = analytics.mid_ratios("2026", org)
-    top_neg = analytics.top_mids("2026", org, "부정")
+    year = analytics.latest_year()
+    mids = analytics.mid_ratios(year, org)
+    top_neg = analytics.top_mids(year, org, "부정")
 
     if any(k in lowered for k in NEXT_STEP_KEYWORDS):
         lines = ["다음 30일 동안 확인해볼 대화 주제로는 아래 영역을 참고해보시면 좋겠습니다."]
@@ -53,11 +54,11 @@ def respond(user_text: str, org_key: str) -> dict:
         return {"text": "\n".join(lines), "source": "local"}
 
     if any(k in lowered for k in SUMMARY_KEYWORDS):
-        overall = analytics.overall_ratio("2026", org)
-        top_pos = analytics.top_mids("2026", org, "긍정")
+        overall = analytics.overall_ratio(year, org)
+        top_pos = analytics.top_mids(year, org, "긍정")
         return {
             "text": (
-                f"{org}의 2026년 결과는 긍정 {overall['긍정']}%, 중립 {overall['중립']}%, "
+                f"{org}의 {year}년 결과는 긍정 {overall['긍정']}%, 중립 {overall['중립']}%, "
                 f"부정 {overall['부정']}%입니다. "
                 f"{', '.join(m['중분류'] for m in top_pos)} 영역은 부서 내 다른 영역보다 "
                 f"긍정 비중이 높고, {', '.join(m['중분류'] for m in top_neg)} 영역은 "
@@ -98,7 +99,7 @@ def respond(user_text: str, org_key: str) -> dict:
     return {
         "text": (
             "구체적으로 어떤 영역이 궁금하신가요? 아래 14개 영역 중 하나를 말씀해 주시면 "
-            f"해당 영역의 2026 데이터와 대화 방향을 안내해드립니다.\n\n"
+            f"해당 영역의 {year} 데이터와 대화 방향을 안내해드립니다.\n\n"
             f"{', '.join(MID_CATEGORY_ORDER)}"
         ),
         "source": "fallback",

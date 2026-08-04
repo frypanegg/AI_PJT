@@ -221,9 +221,10 @@ def api_download(request: Request):
         top_neg_df=pd.DataFrame(payload["top_neg"]),
         executive_summary=payload["executive_summary"],
         chat_history=[(m["role"], m["text"]) for m in history],
+        year=payload["year"],
     )
     analytics.log_access(org_key, payload["org"], "report_download")
-    filename = f"{payload['org']}_2026_조직건강도_리포트.html"
+    filename = f"{payload['org']}_{payload['year']}_조직건강도_리포트.html"
     return Response(
         content=html.encode("utf-8"),
         media_type="text/html; charset=utf-8",
@@ -259,8 +260,9 @@ async def admin_upload(request: Request, file: UploadFile = File(...)):
         request.session["upload_result"] = {
             "ok": True,
             "msg": (
-                f"'{file.filename}' 적용 완료 — 응답 {stats['responses']}건, "
-                f"주관식 {stats['open_texts']}건, 2026 조직 {stats['orgs_2026']}개"
+                f"'{file.filename}' 적용 완료 — 연도 {', '.join(stats['years'])}, "
+                f"응답 {stats['responses']}건, 주관식 {stats['open_texts']}건, "
+                f"{stats['latest_year']}년 조직 {stats['orgs_latest_year']}개"
             ),
         }
         analytics.log_access(None, None, "raw_data_upload")

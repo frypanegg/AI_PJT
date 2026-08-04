@@ -21,7 +21,7 @@
       </a>
       <a href="#s3">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>
-        3. 2024–2026 변화 추이
+        3. {{ a.years[0] }}–{{ a.years[-1] }} 변화 추이
       </a>
       <a href="#s4">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
@@ -58,7 +58,7 @@
       <details>
         <summary><b>업로드 파일 형식 안내</b></summary>
         <ul>
-          <li><b>시트</b>: <code>2024</code>, <code>2025</code>, <code>2026</code> 3개가 모두 있어야 합니다.</li>
+          <li><b>시트</b>: 시트 이름이 4자리 연도(예: <code>2024</code>, <code>2025</code>, <code>2026</code>, <code>2027</code>)인 시트가 1개 이상 있어야 하며, 연도 시트 개수는 자유롭게 늘어날 수 있습니다.</li>
           <li><b>1행</b>: 컬럼 ID (회사명, 조직명, OS02 … 32개 문항ID, C1~C3)</li>
           <li><b>2행</b>: 문항 원문 (읽지 않고 건너뜁니다)</li>
           <li><b>3행부터</b>: 응답 데이터 1인 1행</li>
@@ -80,7 +80,7 @@
 
   <!-- 2. 부서별 비교 -->
   <section class="section" id="s2">
-    <div class="section-title"><span class="no">2</span><h2>부서별 2026 결과 비교</h2></div>
+    <div class="section-title"><span class="no">2</span><h2>부서별 {{ a.year }} 결과 비교</h2></div>
     <div class="caption">
       점수·등급은 제공하지 않으며, 전사 평균(긍정 {{ a.company_wide['긍정'] }}%) 대비 ±3.0%p를 기준으로
       우수/관심 필요를 구분합니다.
@@ -119,7 +119,7 @@
 
   <!-- 3. 3개년 추이 -->
   <section class="section" id="s3">
-    <div class="section-title"><span class="no">3</span><h2>부서별 2024–2026 변화 추이</h2></div>
+    <div class="section-title"><span class="no">3</span><h2>부서별 {{ a.years[0] }}–{{ a.years[-1] }} 변화 추이</h2></div>
     <div class="caption">부서별 긍정 응답 비중의 3개년 추이를 함께 비교합니다.</div>
     <div class="panel">
       <div class="chart" id="trendChart" style="height:350px"></div>

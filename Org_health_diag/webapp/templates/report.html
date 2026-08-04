@@ -42,7 +42,7 @@
     <nav>
       <a href="#s1">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="12" width="4" height="8"></rect><rect x="10" y="7" width="4" height="13"></rect><rect x="17" y="3" width="4" height="17"></rect></svg>
-        1. 2026 진단 요약
+        1. {{ p.year }} 진단 요약
       </a>
       <a href="#s2">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect></svg>
@@ -54,7 +54,7 @@
       </a>
       <a href="#s4">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>
-        4. 3개년 변화 분석
+        4. {{ p.years|length }}개년 변화 분석
       </a>
       <a href="#s5">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
@@ -70,7 +70,7 @@
 
   <main class="content">
     <div class="hero">
-      <div class="eyebrow">2026 조직건강도 진단 리포트 · 본인 담당 조직 전용 · 개인 응답 원문 미노출</div>
+      <div class="eyebrow">{{ p.year }} 조직건강도 진단 리포트 · 본인 담당 조직 전용 · 개인 응답 원문 미노출</div>
       <h1>{{ p.company }} · {{ p.org }}</h1>
       <div class="desc">
         부서 내 14개 영역과 32개 문항을 서로 비교해, 어떤 영역이 상대적으로 안정적이고
@@ -85,7 +85,7 @@
 
     <!-- 1. 요약 -->
     <section class="section" id="s1">
-      <div class="section-title"><span class="no">1</span><h2>2026 진단 요약</h2></div>
+      <div class="section-title"><span class="no">1</span><h2>{{ p.year }} 진단 요약</h2></div>
 
       <div class="grid-2">
         <div class="panel">
@@ -133,7 +133,7 @@
 
     <!-- 2. 카테고리별 -->
     <section class="section" id="s2">
-      <div class="section-title"><span class="no">2</span><h2>카테고리별 2026 결과</h2></div>
+      <div class="section-title"><span class="no">2</span><h2>카테고리별 {{ p.year }} 결과</h2></div>
       <div class="caption">
         각 영역을 같은 대분류 안의 다른 영역 평균과 비교해 서술합니다. 다른 부서·전사 평균과는 비교하지 않습니다.
       </div>
@@ -198,7 +198,7 @@
 
     <!-- 4. 3개년 변화 -->
     <section class="section" id="s4">
-      <div class="section-title"><span class="no">4</span><h2>3개년 변화 분석 (2024–2026)</h2></div>
+      <div class="section-title"><span class="no">4</span><h2>{{ p.years|length }}개년 변화 분석 ({{ p.years[0] }}–{{ p.years[-1] }})</h2></div>
       <div class="caption">
         긍정/중립/부정을 각각 독립된 축으로 확대해, 작은 변화도 보이도록 했습니다 (0~100 공통 척도 아님).
       </div>
@@ -215,7 +215,7 @@
       <div class="grid-2">
         <div class="panel">
           <b>개선 순위 (상위 5개)</b>
-          <div class="caption">2024 → 2026 긍정 응답 비중 변화</div>
+          <div class="caption">{{ p.years[0] }} → {{ p.years[-1] }} 긍정 응답 비중 변화</div>
           {% for d in p.improved %}
           <div class="rank-row">
             <span class="no">{{ loop.index }}</span>
@@ -242,7 +242,7 @@
       </div>
 
       <div class="panel">
-        <label for="midTrendPick" style="margin-top:0">중분류 선택해서 3개년 추이 보기</label>
+        <label for="midTrendPick" style="margin-top:0">중분류 선택해서 {{ p.years|length }}개년 추이 보기</label>
         <select id="midTrendPick">
           {% for mid in p.mid_order %}<option value="{{ mid }}">{{ mid }}</option>{% endfor %}
         </select>
