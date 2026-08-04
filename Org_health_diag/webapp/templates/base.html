@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}2026 조직건강도 진단{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand">
+      <span class="logo">posco</span>
+      <span class="title">2026 조직건강도 진단</span>
+      <span class="sub">{% block subtitle %}{% endblock %}</span>
+    </div>
+    <div>{% block topbar_right %}{% endblock %}</div>
+  </div>
+  {% block body %}{% endblock %}
+</body>
+</html>

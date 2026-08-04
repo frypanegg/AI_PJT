@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block subtitle %}부서장 로그인{% endblock %}
+{% block topbar_right %}
+  <a class="btn" href="/admin/login">🔐 Admin</a>
+{% endblock %}
+
+{% block body %}
+<div class="login-wrap">
+  <div class="login-hero">
+    <h1>본인 담당 조직의 진단 결과를 확인하세요</h1>
+    <p>조직을 선택하고 등록된 생년월일 6자리를 입력해 주세요.</p>
+  </div>
+
+  <div class="panel">
+    <form method="post" action="/login">
+      <label for="org_key">조직 선택</label>
+      <select id="org_key" name="org_key">
+        {% for o in orgs %}
+        <option value="{{ o.org_key }}" {% if o.org_key == preselect %}selected{% endif %}>
+          {{ o.company }} · {{ o.org }}
+        </option>
+        {% endfor %}
+      </select>
+
+      <label for="birth_code">생년월일 6자리 (YYMMDD)</label>
+      <input id="birth_code" name="birth_code" type="password" maxlength="6"
+             placeholder="예: 900101" autocomplete="off">
+
+      <button class="primary" type="submit">인증하기</button>
+    </form>
+
+    {% if error %}<div class="alert warn">{{ error }}</div>{% endif %}
+  </div>
+
+  <p class="caption" style="text-align:center">
+    본 페이지는 사외 시연용 데모입니다. 실제 운영 환경에서는 사내 SSO 인증과 권한 매핑이 적용됩니다.
+  </p>
+</div>
+{% endblock %}

@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block subtitle %}관리자 로그인{% endblock %}
+{% block topbar_right %}
+  <a class="btn" href="/">← 부서장 로그인</a>
+{% endblock %}
+
+{% block body %}
+<div class="login-wrap">
+  <div class="login-hero">
+    <h1>🔐 관리자 로그인</h1>
+    <p>HR 관리자·경영진 전용 화면입니다. 부서별 결과 비교와 접근 이력을 확인할 수 있습니다.</p>
+  </div>
+
+  <div class="panel">
+    <form method="post" action="/admin/login">
+      <label for="admin_id">관리자 ID</label>
+      <input id="admin_id" name="admin_id" type="text" autocomplete="off">
+
+      <label for="password">비밀번호</label>
+      <input id="password" name="password" type="password" autocomplete="off">
+
+      <button class="primary" type="submit">관리자 로그인</button>
+    </form>
+
+    {% if error %}<div class="alert warn">{{ error }}</div>{% endif %}
+  </div>
+</div>
+{% endblock %}

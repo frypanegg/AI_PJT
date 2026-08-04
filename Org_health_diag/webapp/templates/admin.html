@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block subtitle %}관리자 화면{% endblock %}
+{% block topbar_right %}<a class="btn" href="/logout">로그아웃</a>{% endblock %}
+
+{% block body %}
+<div class="content" style="margin:0 auto">
+  <div class="hero">
+    <div class="eyebrow">HR 관리자·경영진 전용</div>
+    <h1>🔐 관리자 화면</h1>
+    <div class="desc">Raw Data 관리 · 부서별 결과 비교 · 부서장 접근 이력을 한 화면에서 확인합니다.</div>
+    <div class="hero-stats">
+      <div class="s"><div class="label">분석 대상 부서</div><div class="value">{{ a.departments|length }}개</div></div>
+      <div class="s"><div class="label">전사 평균 긍정 비중</div><div class="value">{{ a.company_wide['긍정'] }}%</div></div>
+    </div>
+  </div>
+
+  <!-- 1. Raw Data -->
+  <section class="section" id="s1">
+    <div class="section-title"><span class="no">1</span><h2>Raw Data 업로드</h2></div>
+    <div class="caption">설문 원본 엑셀(.xlsx)을 올리면 전체 시스템의 분석 데이터가 교체됩니다.</div>
+
+    {% if data_source %}
+    <div class="alert {% if data_source.ok %}good{% else %}warn{% endif %}">{{ data_source.msg }}</div>
+    {% endif %}
+
+    <div class="panel">
+      <details>
+        <summary><b>업로드 파일 형식 안내</b></summary>
+        <ul>
+          <li><b>시트</b>: <code>2024</code>, <code>2025</code>, <code>2026</code> 3개가 모두 있어야 합니다.</li>
+          <li><b>1행</b>: 컬럼 ID (회사명, 조직명, OS02 … 32개 문항ID, C1~C3)</li>
+          <li><b>2행</b>: 문항 원문 (읽지 않고 건너뜁니다)</li>
+          <li><b>3행부터</b>: 응답 데이터 1인 1행</li>
+          <li><b>조직명</b>은 등록된 부서명과 일치해야 해당 부서 결과가 표시됩니다.</li>
+        </ul>
+      </details>
+
+      <form method="post" action="/admin/upload" enctype="multipart/form-data" style="margin-top:14px">
+        <label for="file">조직건강도 설문 Raw Data 엑셀 파일 (.xlsx)</label>
+        <input id="file" type="file" name="file" accept=".xlsx" required>
+        <button class="primary" type="submit">업로드하여 적용</button>
+      </form>
+
+      <form method="post" action="/admin/reset-data" style="margin-top:10px">
+        <button class="btn" type="submit">기본 더미 데이터로 되돌리기</button>
+      </form>
+    </div>
+  </section>
+
+  <!-- 2. 부서별 비교 -->
+  <section class="section" id="s2">
+    <div class="section-title"><span class="no">2</span><h2>부서별 2026 결과 비교</h2></div>
+    <div class="caption">
+      점수·등급은 제공하지 않으며, 전사 평균(긍정 {{ a.company_wide['긍정'] }}%) 대비 ±3.0%p를 기준으로
+      우수/관심 필요를 구분합니다.
+    </div>
+
+    <div class="panel">
+      <table>
+        <thead>
+          <tr>
+            <th>회사명</th><th>부서명</th><th>응답인원</th>
+            <th>긍정</th><th>중립</th><th>부정</th><th>전사 평균 대비</th><th>구분</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for d in a.departments %}
+          <tr>
+            <td>{{ d.company }}</td>
+            <td><b>{{ d.org }}</b></td>
+            <td>{{ d.respondents }}명</td>
+            <td>{{ d['긍정'] }}%</td>
+            <td>{{ d['중립'] }}%</td>
+            <td>{{ d['부정'] }}%</td>
+            <td>{{ '%+.1f'|format(d.diff) }}%p</td>
+            <td><span class="chip {{ d.tone }}">{{ d.tag }}</span></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="panel">
+      <b>부서별 긍정 응답 비중</b>
+      <div class="chart" id="deptChart" style="height:330px;margin-top:10px"></div>
+    </div>
+  </section>
+
+  <!-- 3. 3개년 추이 -->
+  <section class="section" id="s3">
+    <div class="section-title"><span class="no">3</span><h2>부서별 2024–2026 변화 추이</h2></div>
+    <div class="caption">부서별 긍정 응답 비중의 3개년 추이를 함께 비교합니다.</div>
+    <div class="panel">
+      <div class="chart" id="trendChart" style="height:350px"></div>
+    </div>
+  </section>
+
+  <!-- 4. 접근 이력 -->
+  <section class="section" id="s4">
+    <div class="section-title"><span class="no">4</span><h2>부서장별 접근 이력</h2></div>
+    <div class="caption">로그인 · 챗봇 대화 · 리포트 다운로드 이력을 한눈에 확인합니다.</div>
+    <div class="panel">
+      <table>
+        <thead>
+          <tr>
+            <th>회사명</th><th>부서명</th><th>조직장명</th>
+            <th>로그인 이력</th><th>챗봇 채팅 이력</th><th>보고서 다운로드 이력</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in a.activity %}
+          <tr>
+            <td>{{ r['회사명'] }}</td>
+            <td><b>{{ r['부서명'] }}</b></td>
+            <td>{{ r['조직장명'] }}</td>
+            <td>{{ r['로그인 이력'] }}</td>
+            <td>{{ r['챗봇 채팅 이력'] }}</td>
+            <td>{{ r['보고서 다운로드 이력'] }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <p class="caption">
+      본 화면은 시연용 데모이며, 실제 운영 환경에서는 HR 관리자 권한 검증과 접근 로그 감사가 함께 적용되어야 합니다.
+    </p>
+  </section>
+</div>
+
+<script src="/static/vendor/chart.umd.min.js"></script>
+<script>
+  window.ADMIN = {
+    departments: {{ a.departments|tojson }},
+    companyWide: {{ a.company_wide|tojson }}
+  };
+</script>
+<script src="/static/admin.js"></script>
+{% endblock %}
