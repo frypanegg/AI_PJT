@@ -3,7 +3,38 @@
 {% block topbar_right %}<a class="btn" href="/logout">로그아웃</a>{% endblock %}
 
 {% block body %}
-<div class="content" style="margin:0 auto">
+<div class="layout">
+  <aside class="sidebar">
+    <div class="who">
+      <span class="name">관리자</span>
+      <small class="co">HR · 경영진 전용</small>
+    </div>
+    <h3>바로가기</h3>
+    <nav>
+      <a href="#s1">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+        1. Raw Data 업로드
+      </a>
+      <a href="#s2">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+        2. 부서별 결과 비교
+      </a>
+      <a href="#s3">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>
+        3. 2024–2026 변화 추이
+      </a>
+      <a href="#s4">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+        4. 부서장별 접근 이력
+      </a>
+    </nav>
+    <div class="note">
+      Raw Data 관리 · 부서별 결과 비교 · 접근 이력을 한 화면에서 확인합니다.<br><br>
+      이 화면은 <b>부서 간 비교가 목적인 HR 전용 화면</b>으로, 부서장 리포트와는 비교 기준이 다릅니다.
+    </div>
+  </aside>
+
+  <main class="content">
   <div class="hero">
     <div class="eyebrow">HR 관리자·경영진 전용</div>
     <h1>🔐 관리자 화면</h1>
@@ -126,6 +157,7 @@
       본 화면은 시연용 데모이며, 실제 운영 환경에서는 HR 관리자 권한 검증과 접근 로그 감사가 함께 적용되어야 합니다.
     </p>
   </section>
+  </main>
 </div>
 
 <script src="/static/vendor/chart.umd.min.js"></script>
