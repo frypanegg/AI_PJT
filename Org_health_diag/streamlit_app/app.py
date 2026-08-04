@@ -66,6 +66,14 @@ section[data-testid="stSidebar"] {font-size: 1.05rem;}
     border-bottom: 3px solid #3E8E5A; padding-bottom: 0.4rem;
 }
 .oh-caption {color: #808898; font-size: 0.95rem;}
+.oh-item-title {
+    font-size: 1.3rem; font-weight: 700; line-height: 1.45;
+    margin-top: 0.2rem; margin-bottom: 0.1rem;
+}
+.oh-item-meta {
+    color: #808898; font-size: 0.9rem; letter-spacing: 0.02em;
+    margin-bottom: 0.1rem;
+}
 a.oh-nav {text-decoration:none; display:block; padding:6px 0; color: inherit; font-size: 1.05rem;}
 a.oh-nav:hover {color:#3E8E5A;}
 </style>
@@ -119,19 +127,6 @@ def section_title(text: str):
 
 def badge(bucket: str, value: float) -> str:
     return f'<span class="oh-badge" style="background:{COLORS[bucket]}">{bucket} {value}%</span>'
-
-
-def color_legend() -> str:
-    swatches = "".join(
-        f'<span style="display:inline-block;width:12px;height:12px;background:{COLORS[b]};'
-        f'border-radius:3px;margin-right:5px;"></span>{b}&nbsp;&nbsp;&nbsp;'
-        for b in BUCKETS
-    )
-    swatches += (
-        '<span style="display:inline-block;width:9px;height:9px;background:black;'
-        'border-radius:50%;margin-right:5px;"></span>전사 평균(긍정%)'
-    )
-    return swatches
 
 
 # ---------------------------------------------------------------------------
@@ -244,59 +239,71 @@ def donut_chart(ratio: dict, respondents: int):
     return fig
 
 
-def category_stacked_bar(
-    df: pd.DataFrame,
-    y_col: str,
-    company_avg: pd.DataFrame | None = None,
-    height: int | None = None,
-    show_legend: bool = True,
-    show_y_labels: bool = True,
-):
-    order = df[y_col].tolist()
+def ratio_bar(row, height: int = 74):
+    """단일 항목의 긍정/중립/부정 비중을 하나의 막대로 보여준다.
+
+    비율 수치를 막대 안에 직접 넣어(범례·축 없이) 컴팩트하게 만들고, y축 라벨을
+    쓰지 않아 문항 길이와 무관하게 모든 막대가 같은 위치에서 시작한다.
+
+    주의: 스택 막대에서는 Plotly가 바깥쪽 텍스트 배치를 지원하지 않아, 폭이 좁아
+    글자가 안 들어가면 라벨을 통째로 감춘다. 그래서 좁은 구간은 막대 안에 넣지 않고
+    막대 오른쪽에 주석으로 따로 표시한다.
+    """
+    INSIDE_MIN = 11.0  # 이 비중 미만이면 막대 안에 글자가 안정적으로 들어가지 않는다
     fig = go.Figure()
+    overflow = []
+
     for b in BUCKETS:
+        value = float(row[b])
+        if value >= INSIDE_MIN:
+            label = f"{b} {value}%" if value >= 16 else f"{value}%"
+        else:
+            label = ""
+            if value > 0:
+                overflow.append((b, value))
         fig.add_trace(
             go.Bar(
-                y=df[y_col],
-                x=df[b],
+                y=[""],
+                x=[value],
                 name=b,
                 orientation="h",
                 marker_color=COLORS[b],
-                customdata=df[["n", "대분류"]] if "대분류" in df.columns else None,
-                hovertemplate=(
-                    f"{b} %{{x}}%%<br>표본 크기 %{{customdata[0]}}명"
-                    "<br>대분류 %{customdata[1]}<extra></extra>"
-                    if "대분류" in df.columns
-                    else f"{b} %{{x}}%<extra></extra>"
-                ),
+                text=[label],
+                textposition="inside",
+                insidetextanchor="middle",
+                textangle=0,
+                constraintext="none",
+                insidetextfont=dict(color="white", size=14),
+                hovertemplate=f"{b} {value}%<extra></extra>",
             )
         )
-    if company_avg is not None:
-        fig.add_trace(
-            go.Scatter(
-                y=company_avg[y_col],
-                x=company_avg["긍정"],
-                mode="markers",
-                marker=dict(color="black", size=9, symbol="diamond"),
-                name="전사 평균(긍정%)",
-                hovertemplate="전사 평균 긍정 %{x}%<extra></extra>",
-            )
+
+    for i, (b, value) in enumerate(overflow):
+        fig.add_annotation(
+            # 축 좌표(0~100) 밖은 그려지지 않으므로 paper 좌표로 오른쪽 여백에 배치한다
+            xref="paper",
+            yref="paper",
+            x=1.005,
+            y=0.5,
+            yshift=(len(overflow) - 1 - 2 * i) * 9,  # 여러 개면 위아래로 나눠 겹치지 않게
+            text=f"{b} {value}%",
+            showarrow=False,
+            xanchor="left",
+            yanchor="middle",
+            font=dict(color=COLORS[b], size=13),
         )
+
     fig.update_layout(
         barmode="stack",
-        height=height if height is not None else max(340, 38 * len(order)),
-        margin=dict(t=10, b=10, l=10, r=10),
-        xaxis=dict(title="응답 비중(%)", range=[0, 100]),
-        yaxis=dict(
-            categoryorder="array",
-            categoryarray=order[::-1],
-            automargin=True,
-            showticklabels=show_y_labels,
-        ),
-        showlegend=show_legend,
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+        height=height,
+        # 막대 밖 주석이 잘리지 않도록 오른쪽 여백 확보
+        margin=dict(t=8, b=8, l=0, r=96 if overflow else 8),
+        xaxis=dict(range=[0, 100], showticklabels=False, showgrid=False, zeroline=False),
+        yaxis=dict(showticklabels=False, showgrid=False, zeroline=False),
+        showlegend=False,
         font=PLOTLY_FONT,
         hoverlabel=dict(font_size=15),
+        bargap=0.15,
     )
     return fig
 
@@ -333,7 +340,7 @@ def proportion_bar(row) -> str:
     )
 
 
-def category_card(row, company_avg_positive: float):
+def category_card(row, peer_avg_positive, peer_label: str):
     mid = row["중분류"]
     with st.container():
         st.markdown(
@@ -348,9 +355,12 @@ def category_card(row, company_avg_positive: float):
         with st.popover("자세히 보기", use_container_width=True):
             card = MID_INTERPRETATION[mid]
             st.markdown(f"**정의**  \n{card['정의']}")
-            st.markdown(insights.category_commentary(mid, row, company_avg_positive))
+            st.markdown(insights.peer_commentary(mid, row, peer_avg_positive, peer_label))
             st.markdown(f"**권장 대화 방향**  \n{card['방향']}")
-            st.caption("전사 평균과 비교한 참고용 해석이며, 점수·등급·순위는 제공하지 않습니다.")
+            st.caption(
+                "우리 부서 내부 영역 간 비교 결과이며, 다른 부서·전사 평균과 비교하지 않습니다. "
+                "점수·등급·순위는 제공하지 않습니다."
+            )
 
 
 def render_report():
@@ -405,13 +415,12 @@ def render_report():
     top_neg = data.top3_mid(obj_df, "2026", org, by="부정", ascending=False)
 
     mid_df = data.all_mid_ratios(obj_df, "2026", org)
-    company_avg_rows = []
-    for mid in MID_CATEGORY_ORDER:
-        company_avg_rows.append({"중분류": mid, **data.company_wide_ratio(obj_df, "2026", mid)})
-    company_avg_df = pd.DataFrame(company_avg_rows)
+    q_df_all = data.all_question_ratios(obj_df, "2026", org)
 
-    def avg_positive_for(mid: str) -> float:
-        return float(company_avg_df.loc[company_avg_df["중분류"] == mid, "긍정"].iloc[0])
+    # 부서 간 비교를 지양하라는 지침에 따라, 비교 기준은 전사 평균이 아니라
+    # '우리 부서 안의 다른 항목 평균'이다.
+    dept_avg_positive = overall["긍정"]
+    DEPT_PEER_LABEL = "우리 부서 전체 평균 대비"
 
     # ---- Section 1: 2026 요약 ----
     anchor("summary")
@@ -432,11 +441,11 @@ def render_report():
         with cc1:
             st.markdown("**긍정 응답 Top3 영역**")
             for _, row in top_pos.iterrows():
-                category_card(row, avg_positive_for(row["중분류"]))
+                category_card(row, dept_avg_positive, DEPT_PEER_LABEL)
         with cc2:
             st.markdown("**부정 응답 Top3 영역**")
             for _, row in top_neg.iterrows():
-                category_card(row, avg_positive_for(row["중분류"]))
+                category_card(row, dept_avg_positive, DEPT_PEER_LABEL)
 
     st.markdown("**주관식 Top3 요약** (원문 대신 반복적으로 나타난 응답 경향만 요약)")
     t1, t2, t3 = st.columns(3)
@@ -455,9 +464,10 @@ def render_report():
     # ---- Section 2: 카테고리별 결과 ----
     anchor("category")
     section_title("2. 카테고리별 2026 결과")
-    st.caption("점 표시는 전사(전체 조직 통합) 평균 긍정 비중입니다. 조직 간 순위 비교 목적이 아닙니다.")
-    st.markdown(color_legend(), unsafe_allow_html=True)
-    st.write("")
+    st.caption(
+        "각 영역을 같은 대분류 안의 다른 영역 평균과 비교해 서술합니다. "
+        "다른 부서·전사 평균과는 비교하지 않습니다."
+    )
 
     major_tab1, major_tab2 = st.tabs(["직원 몰입 수준", "회사 지원 수준"])
     for tab, major in zip((major_tab1, major_tab2), ["직원 몰입 수준", "회사 지원 수준"]):
@@ -465,37 +475,33 @@ def render_report():
             sub = mid_df[mid_df["대분류"] == major].reset_index(drop=True)
             for _, row in sub.iterrows():
                 mid = row["중분류"]
-                avg_row = company_avg_df[company_avg_df["중분류"] == mid]
                 card = MID_INTERPRETATION[mid]
-                st.markdown(f"**{mid}**")
+                peer_avg = data.peer_avg_for_mid(mid_df, mid, major)
+                st.markdown(f'<div class="oh-item-title">{mid}</div>', unsafe_allow_html=True)
                 st.plotly_chart(
-                    category_stacked_bar(
-                        pd.DataFrame([row]),
-                        "중분류",
-                        avg_row,
-                        height=110,
-                        show_legend=False,
-                        show_y_labels=False,
-                    ),
+                    ratio_bar(row),
                     use_container_width=True,
                     config={"displayModeBar": False},
+                    # 비율이 같은 영역끼리 figure가 완전히 동일해져 자동 ID가 충돌하므로 key를 명시한다
+                    key=f"midbar_{major}_{mid}",
                 )
-                st.markdown(
-                    badge("긍정", row["긍정"]) + badge("중립", row["중립"]) + badge("부정", row["부정"]),
-                    unsafe_allow_html=True,
+                st.write(
+                    insights.peer_commentary(
+                        mid, row, peer_avg, f"대분류({major}) 내 다른 영역 평균 대비"
+                    )
                 )
-                st.write(insights.category_commentary(mid, row, avg_row["긍정"].iloc[0]))
                 st.caption(f"권장 대화 방향: {card['방향']}")
                 st.divider()
 
     # ---- Section 3: 32개 문항별 근거 ----
     anchor("questions")
     section_title("3. 32개 문항별 근거")
-    st.caption("점수·등급·순위는 표시하지 않으며 문항별 긍정/중립/부정 비중만 제공합니다.")
-    st.markdown(color_legend(), unsafe_allow_html=True)
-    st.write("")
+    st.caption(
+        "각 문항을 같은 중분류 안의 다른 문항 평균과 비교해 서술합니다. "
+        "점수·등급·순위는 표시하지 않으며, 다른 부서·전사 평균과는 비교하지 않습니다."
+    )
 
-    q_df = data.all_question_ratios(obj_df, "2026", org)
+    q_df = q_df_all
     filt_col, sort_col = st.columns([1, 1])
     with filt_col:
         mid_filter = st.selectbox("중분류 필터", ["전체"] + MID_CATEGORY_ORDER, key="qfilter")
@@ -508,22 +514,20 @@ def render_report():
     for _, row in view.iterrows():
         qid = row["문항ID"]
         mid = row["중분류"]
-        q_avg = data.company_wide_question_ratio(obj_df, "2026", qid)
+        peer_avg, peer_label = data.peer_avg_for_question(q_df, qid, mid)
+        # 문항 원문을 크게 두어 서로 다른 문항임이 먼저 보이게 하고,
+        # 중분류·문항ID는 보조 정보로 작게 표시한다.
+        st.markdown(f'<div class="oh-item-title">{row["문항"]}</div>', unsafe_allow_html=True)
+        st.markdown(
+            f'<div class="oh-item-meta">{qid} · {mid}</div>', unsafe_allow_html=True
+        )
         st.plotly_chart(
-            category_stacked_bar(
-                pd.DataFrame([row]), "문항", height=130, show_legend=False, show_y_labels=True
-            ),
+            ratio_bar(row),
             use_container_width=True,
             config={"displayModeBar": False},
+            key=f"qbar_{qid}",
         )
-        st.markdown(
-            f"`{qid}` · {mid} — "
-            + badge("긍정", row["긍정"])
-            + badge("중립", row["중립"])
-            + badge("부정", row["부정"]),
-            unsafe_allow_html=True,
-        )
-        st.caption(insights.category_commentary(mid, row, q_avg["긍정"]))
+        st.caption(insights.peer_commentary(mid, row, peer_avg, peer_label or ""))
         st.divider()
 
     # ---- Section 4: 3개년 변화 분석 ----
@@ -540,6 +544,7 @@ def render_report():
                 trend_bucket_chart(overall_trend, b),
                 use_container_width=True,
                 config={"displayModeBar": False},
+                key=f"trend_overall_{b}",
             )
 
     deltas = []
@@ -580,6 +585,7 @@ def render_report():
                 trend_bucket_chart(trend_row["trend"], b),
                 use_container_width=True,
                 config={"displayModeBar": False},
+                key=f"trend_mid_{b}",
             )
     st.caption(trend_row["text"])
 
@@ -645,7 +651,7 @@ def render_report():
     for col, label in zip(quick_cols, quick_topics):
         if col.button(label, key=f"quick_{org_key}_{label}", use_container_width=True):
             with st.spinner("답변 생성 중..."):
-                reply = chatbot.respond(label, org, overall, mid_df, top_pos, top_neg, company_avg_df)
+                reply = chatbot.respond(label, org, overall, mid_df, top_pos, top_neg)
             st.session_state.chat_history.append(("user", label))
             st.session_state.chat_history.append(("assistant", reply))
             auth.log_access(org_key, "chat_message")
@@ -661,7 +667,7 @@ def render_report():
         )
     if user_msg:
         with st.spinner("답변 생성 중..."):
-            reply = chatbot.respond(user_msg, org, overall, mid_df, top_pos, top_neg, company_avg_df)
+            reply = chatbot.respond(user_msg, org, overall, mid_df, top_pos, top_neg)
         st.session_state.chat_history.append(("user", user_msg))
         st.session_state.chat_history.append(("assistant", reply))
         auth.log_access(org_key, "chat_message")

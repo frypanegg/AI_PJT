@@ -61,13 +61,16 @@ def match_category(text: str):
     return None
 
 
-def category_reply(mid: str, mid_df, company_avg_df) -> str:
+def category_reply(mid: str, mid_df) -> str:
+    import data
+
     row = mid_df[mid_df["중분류"] == mid].iloc[0]
-    avg_positive = company_avg_df.loc[company_avg_df["중분류"] == mid, "긍정"].iloc[0]
+    major = row["대분류"]
+    peer_avg = data.peer_avg_for_mid(mid_df, mid, major)
     card = MID_INTERPRETATION[mid]
     lines = [
         f"**{mid}** — 긍정 {row['긍정']}% · 중립 {row['중립']}% · 부정 {row['부정']}%",
-        insights.category_commentary(mid, row, avg_positive),
+        insights.peer_commentary(mid, row, peer_avg, f"대분류({major}) 내 다른 영역 평균 대비"),
         f"권장 대화 방향: {card['방향']}",
     ]
     qs = SAMPLE_QUESTIONS.get(mid)
@@ -84,9 +87,7 @@ def fallback_reply() -> str:
     )
 
 
-def respond(
-    user_text: str, org: str, overall: dict, mid_df, top_pos_df, top_neg_df, company_avg_df
-) -> str:
+def respond(user_text: str, org: str, overall: dict, mid_df, top_pos_df, top_neg_df) -> str:
     lowered = user_text.lower()
 
     if any(k in lowered for k in GREETING_KEYWORDS):
@@ -111,7 +112,7 @@ def respond(
 
     mid = match_category(user_text)
     if mid:
-        return category_reply(mid, mid_df, company_avg_df)
+        return category_reply(mid, mid_df)
 
     if web_advisor.available():
         web_answer = web_advisor.answer(user_text)

@@ -289,6 +289,38 @@ def question_ratio(obj_df: pd.DataFrame, year: str, org: str, qid: str) -> dict:
     return ratio_from_subset(sub)
 
 
+def peer_avg_for_mid(mid_df: pd.DataFrame, mid: str, major: str) -> float | None:
+    """같은 대분류 안의 '다른' 중분류들의 긍정 비중 평균 (자기 자신 제외).
+
+    부서 간 비교를 지양하라는 지침에 따라, 전사 평균 대신 이 값을 비교 기준으로 쓴다.
+    비교 대상이 없으면 None.
+    """
+    peers = mid_df[(mid_df["대분류"] == major) & (mid_df["중분류"] != mid)]
+    if peers.empty:
+        return None
+    return round(float(peers["긍정"].mean()), 1)
+
+
+def peer_avg_for_question(q_df: pd.DataFrame, qid: str, mid: str):
+    """같은 중분류 안의 '다른' 문항들의 긍정 비중 평균 (자기 자신 제외).
+
+    해당 중분류에 문항이 하나뿐이면 같은 대분류의 다른 문항들로 범위를 넓힌다.
+    반환: (평균, 비교범위 라벨). 비교 대상이 아예 없으면 (None, None).
+    """
+    peers = q_df[(q_df["중분류"] == mid) & (q_df["문항ID"] != qid)]
+    if not peers.empty:
+        return round(float(peers["긍정"].mean()), 1), f"중분류({mid}) 내 다른 문항 평균 대비"
+
+    row = q_df[q_df["문항ID"] == qid]
+    if row.empty:
+        return None, None
+    major = row.iloc[0]["대분류"]
+    peers = q_df[(q_df["대분류"] == major) & (q_df["문항ID"] != qid)]
+    if peers.empty:
+        return None, None
+    return round(float(peers["긍정"].mean()), 1), f"대분류({major}) 내 다른 문항 평균 대비"
+
+
 def company_wide_ratio(obj_df: pd.DataFrame, year: str, mid: str | None = None) -> dict:
     """전사(모든 조직 통합) 평균 비중 — 특정 조직 순위 비교가 아닌 참고용 기준선."""
     sub = obj_df[obj_df["year"] == year]

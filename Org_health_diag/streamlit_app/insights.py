@@ -8,26 +8,37 @@
 
 from catalog import MID_INTERPRETATION
 
-# 전사 평균과의 차이가 이 값(%p) 미만이면 "비슷한 수준"으로 본다.
+# 비교 대상과의 차이가 이 값(%p) 미만이면 "비슷한 수준"으로 본다.
 CATEGORY_DIFF_THRESHOLD = 3.0
 
 
-def category_commentary(mid: str, ratio: dict, company_avg_positive: float) -> str:
-    """전사 평균(긍정 비중) 대비 해당 영역이 양호/관찰 필요/비슷한 수준인지 평가한다.
+def peer_commentary(mid: str, ratio: dict, peer_avg_positive: float | None, peer_label: str) -> str:
+    """같은 리포트 안의 다른 항목 평균과 비교해 해석 문장을 만든다.
 
-    조직 자체 응답에서 어느 버킷이 큰지가 아니라, 같은 영역의 전사 평균과 비교해
-    상대적으로 판단한다 (06_guardrails.md에 따라 절대 점수·등급은 사용하지 않음).
+    부서 간 비교를 지양하라는 지침에 따라 전사 평균·타 부서와는 비교하지 않고,
+    우리 부서 결과 범위 안에서만(대분류 내 다른 영역, 중분류 내 다른 문항 등)
+    상대 위치를 설명한다. 절대 점수·등급은 사용하지 않는다 (06_guardrails.md).
+
+    peer_avg_positive 가 None이면 비교 대상이 없다는 뜻이므로 비교 없이 서술한다.
     """
     card = MID_INTERPRETATION[mid]
-    diff = round(ratio["긍정"] - company_avg_positive, 1)
+
+    if peer_avg_positive is None:
+        dominant = max(("긍정", "중립", "부정"), key=lambda k: ratio.get(k, 0))
+        lead = (
+            f"긍정 {ratio['긍정']}% · 중립 {ratio['중립']}% · 부정 {ratio['부정']}%로 나타났습니다."
+        )
+        return f"{lead} {card[dominant]}"
+
+    diff = round(ratio["긍정"] - peer_avg_positive, 1)
     if diff >= CATEGORY_DIFF_THRESHOLD:
-        lead = f"{mid} 영역은 전사 평균 대비 긍정 응답 비중이 {diff:+.1f}%p 높아 양호한 편입니다."
+        lead = f"{peer_label} 긍정 응답 비중이 {diff:+.1f}%p 높은 편입니다."
         detail = card["긍정"]
     elif diff <= -CATEGORY_DIFF_THRESHOLD:
-        lead = f"{mid} 영역은 전사 평균 대비 긍정 응답 비중이 {diff:.1f}%p 낮아 관찰이 필요합니다."
+        lead = f"{peer_label} 긍정 응답 비중이 {diff:.1f}%p 낮아 상대적으로 관찰이 필요합니다."
         detail = card["부정"]
     else:
-        lead = f"{mid} 영역은 전사 평균과 비슷한 수준입니다 ({diff:+.1f}%p)."
+        lead = f"{peer_label} 비슷한 수준입니다 ({diff:+.1f}%p)."
         detail = card["중립"]
     return f"{lead} {detail}"
 
@@ -38,12 +49,12 @@ def executive_summary(org: str, overall: dict, top_pos_df, top_neg_df) -> str:
     return (
         f"{org}은(는) 2026년 진단에서 전체 긍정 응답 비중 {overall['긍정']}%, "
         f"중립 {overall['중립']}%, 부정 {overall['부정']}%로 나타났습니다. "
-        f"특히 {pos_names} 영역에서 긍정 응답 비중이 상대적으로 높게 나타나, "
+        f"부서 내 14개 영역을 서로 비교했을 때 {pos_names} 영역의 긍정 응답 비중이 상대적으로 높아, "
         f"해당 영역의 구성원 경험이 비교적 안정적으로 형성되어 있을 가능성을 시사합니다. "
-        f"반면 {neg_names} 영역은 상대적으로 부정 응답 비중이 높아, "
+        f"반면 {neg_names} 영역은 부서 내 다른 영역에 비해 부정 응답 비중이 높아, "
         f"구성원이 관련 영역에서 불편을 경험했을 가능성이 있어 확인이 필요합니다. "
-        f"이 리포트는 특정 원인을 단정하지 않으며, 조직장이 구성원과 나눌 대화의 "
-        f"출발점으로 활용하는 것을 권장합니다."
+        f"본 해석은 다른 부서나 전사 평균과의 비교가 아니라 부서 내부 영역 간 비교이며, "
+        f"특정 원인을 단정하지 않습니다. 조직장이 구성원과 나눌 대화의 출발점으로 활용하는 것을 권장합니다."
     )
 
 
