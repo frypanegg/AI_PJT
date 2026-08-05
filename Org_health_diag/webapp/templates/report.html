@@ -138,24 +138,21 @@
         각 영역을 같은 대분류 안의 다른 영역 평균과 비교해 서술합니다. 다른 부서·전사 평균과는 비교하지 않습니다.
       </div>
 
-      <div class="tabs" id="majorTabs">
-        <button class="active" data-major="직원 몰입 수준">직원 몰입 수준</button>
-        <button data-major="회사 지원 수준">회사 지원 수준</button>
-      </div>
-
-      {% for major in ["직원 몰입 수준", "회사 지원 수준"] %}
-      <div class="panel major-panel" data-major="{{ major }}"
-           {% if not loop.first %}style="display:none"{% endif %}>
-        {% for m in p.mids if m['대분류'] == major %}
-        <div class="item">
-          <div class="item-title">{{ m['중분류'] }}</div>
-          {{ ratio_bar(m) }}
-          <div class="item-comment">{{ m.comment }}</div>
-          <div class="item-direction">권장 대화 방향: {{ m.direction }}</div>
+      <div class="grid-2 major-split">
+        {% for major in ["직원 몰입 수준", "회사 지원 수준"] %}
+        <div class="panel major-panel">
+          <div class="major-panel-title">{{ major }}</div>
+          {% for m in p.mids if m['대분류'] == major %}
+          <div class="item">
+            <div class="item-title">{{ m['중분류'] }}</div>
+            {{ ratio_bar(m) }}
+            <div class="item-comment">{{ m.comment }}</div>
+            <div class="item-direction">권장 대화 방향: {{ m.direction }}</div>
+          </div>
+          {% endfor %}
         </div>
         {% endfor %}
       </div>
-      {% endfor %}
     </section>
 
     <!-- 3. 문항별 -->

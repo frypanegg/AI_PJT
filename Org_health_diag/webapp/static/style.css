@@ -154,7 +154,7 @@ h1, h2, h3 { line-height: 1.32; font-family: "Hanken Grotesk", "Noto Sans KR", s
 .card:hover, .panel:hover { box-shadow: var(--shadow-hover); }
 .card .name { font-size: 1.08rem; font-weight: 800; font-family: "Hanken Grotesk", "Noto Sans KR", sans-serif; }
 
-.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start; }
 .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
 
 .summary-note {
@@ -199,6 +199,13 @@ h1, h2, h3 { line-height: 1.32; font-family: "Hanken Grotesk", "Noto Sans KR", s
 .item-meta { color: var(--muted); font-size: .85rem; margin-top: 2px; }
 .item-comment { margin: 10px 0 4px; }
 .item-direction { color: var(--muted); font-size: .91rem; }
+
+/* ---------- 대분류 좌우 분할 ---------- */
+.major-panel-title {
+  font-size: 1.02rem; font-weight: 800; color: var(--primary);
+  padding-bottom: 10px; margin-bottom: 6px; border-bottom: 2px solid var(--accent-blue-soft);
+  font-family: "Hanken Grotesk", "Noto Sans KR", sans-serif;
+}
 
 /* ---------- 탭 ---------- */
 .tabs { display: flex; gap: 8px; margin-bottom: 16px; }

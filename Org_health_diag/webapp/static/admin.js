@@ -1,4 +1,16 @@
-/* 관리자 화면 차트: 부서별 긍정 비중 막대 + 부서별 3개년 추이 */
+/* 관리자 화면: 사이드바 스크롤 이동 + 부서별 긍정 비중 막대 + 부서별 다개년 추이 */
+(function () {
+  document.querySelectorAll('.sidebar nav a[href^="#"]').forEach(link => {
+    link.addEventListener('click', (e) => {
+      const target = document.querySelector(link.getAttribute('href'));
+      if (!target) return;
+      e.preventDefault();
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      window.history.pushState(null, '', link.getAttribute('href'));
+    });
+  });
+})();
+
 (function () {
   const A = window.ADMIN || {};
   if (typeof Chart === 'undefined' || !A.departments) return;
