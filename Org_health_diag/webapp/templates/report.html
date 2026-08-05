@@ -139,7 +139,7 @@
       </div>
 
       <div class="grid-2 major-split">
-        {% for major in ["직원 몰입 수준", "회사 지원 수준"] %}
+        {% for major in ["회사 지원 수준", "직원 몰입 수준"] %}
         <div class="panel major-panel">
           <div class="major-panel-title">{{ major }}</div>
           {% for m in p.mids if m['대분류'] == major %}
