@@ -50,6 +50,11 @@ body {
   font-size: 16.5px;
   line-height: 1.68;
   scroll-behavior: smooth;
+  /* 브라우저 기본값은 한글을 음절 단위로 줄바꿈한다(CJK 라인브레이킹 규칙).
+     어절 단위로 끊기도록 keep-all을 쓰고, 너무 긴 토큰(URL 등)만 예외적으로
+     끊어지도록 overflow-wrap을 안전망으로 둔다. */
+  word-break: keep-all;
+  overflow-wrap: break-word;
 }
 
 a { color: inherit; }
