@@ -10,3 +10,9 @@ dummy_data/uploaded_survey.xlsx.tmp
 # FastAPI 웹앱 로컬 산출물
 webapp/org_health.db
 webapp/.session_secret
+
+# 산출물 빌드 부산물
+docs/node_modules/
+docs/package-lock.json
+docs/package.json
+docs/demo/_raw/
