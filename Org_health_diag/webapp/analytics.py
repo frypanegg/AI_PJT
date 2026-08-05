@@ -96,6 +96,42 @@ def log_access(org_key: str | None, org: str | None, event: str):
         )
 
 
+# ---------------------------------------------------------------------------
+# 챗봇 대화 기록 (세션 쿠키가 아니라 DB에 저장 — 쿠키 4KB 한도 회피)
+# ---------------------------------------------------------------------------
+
+def save_chat_history(session_id: str, org_key: str | None, history: list[dict]):
+    """이 세션의 대화 전체를 덮어쓴다. 클라이언트가 누적된 배열 전체를 매번 보낸다."""
+    import datetime as dt
+
+    now = dt.datetime.now().isoformat(timespec="seconds")
+    with db.session() as conn:
+        conn.execute("DELETE FROM chat_messages WHERE session_id=?", (session_id,))
+        conn.executemany(
+            "INSERT INTO chat_messages (session_id, org_key, seq, role, text, ts)"
+            " VALUES (?,?,?,?,?,?)",
+            [
+                (session_id, org_key, i, m.get("role", "user"), m.get("text", ""), now)
+                for i, m in enumerate(history)
+                if m.get("text")
+            ],
+        )
+
+
+def get_chat_history(session_id: str) -> list[dict]:
+    with db.session() as conn:
+        rows = conn.execute(
+            "SELECT role, text FROM chat_messages WHERE session_id=? ORDER BY seq",
+            (session_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def clear_chat_history(session_id: str):
+    with db.session() as conn:
+        conn.execute("DELETE FROM chat_messages WHERE session_id=?", (session_id,))
+
+
 def manager_activity() -> list[dict]:
     """부서장별 로그인·챗봇·다운로드 이력 요약."""
     with db.session() as conn:

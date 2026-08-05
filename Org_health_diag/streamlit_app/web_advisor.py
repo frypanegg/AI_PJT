@@ -38,6 +38,30 @@ SYSTEM_PROMPT = (
 
 DEFAULT_MODEL = "gpt-4.1-mini"
 
+GROUNDED_SYSTEM_PROMPT = (
+    "당신은 부서장의 조직 운영 고민에 대화 상대가 되어주는 도우미입니다. "
+    "아래에 이 부서의 실제 진단 데이터 요약이 주어집니다. 이를 근거로 부서장의 "
+    "질문에 구체적이고 실질적으로 답변하세요. 주어진 데이터를 요약해서 되풀이하지 "
+    "말고, 질문에서 실제로 묻는 내용(원인 가설, 조율 방법, 대화 방식 등)에 답하세요. "
+    "다음을 반드시 지키세요: "
+    "1) 주어진 데이터에 없는 구체적 수치·사실을 지어내지 않는다. "
+    "2) 특정 개인을 지목하거나 평가·단정하지 않는다 — 이 데이터는 익명 집계이며 "
+    "개인 식별 정보가 없다. "
+    "3) 징계, 처벌적 관리 방식을 권장하지 않는다. "
+    "4) 일방적 처방이 아니라 점검해볼 방향과 대화 방법을 제안한다. "
+    "5) 점수, 등급, 순위 표현을 사용하지 않는다. "
+    "6) 한국어로 300~450자 내외로 간결하게 답변한다."
+)
+
+SUMMARY_SYSTEM_PROMPT = (
+    "당신은 부서장과 조직운영 챗봇 사이의 대화를 요약하는 보조 역할입니다. "
+    "아래 대화 전체를 읽고, 부서장이 궁금해했던 주제와 챗봇이 제안한 방향을 "
+    "한국어 불릿 포인트로 간결하게 정리하세요. "
+    "형식: '- 주제: 한 줄 요지' 를 대화당 최대 6개 항목까지. "
+    "새로운 조언을 추가하거나 원 대화에 없는 내용을 지어내지 마세요. "
+    "점수·등급·순위 표현은 쓰지 않습니다."
+)
+
 
 def _get_secret(name: str):
     try:
@@ -53,6 +77,63 @@ def _get_secret(name: str):
 
 def available() -> bool:
     return bool(_get_secret("OPENAI_API_KEY") and _get_secret("TAVILY_API_KEY"))
+
+
+def llm_available() -> bool:
+    """웹검색 없이 OpenAI 호출만 필요한 기능(근거 기반 대화, 대화 요약)의 가용 여부."""
+    return bool(_get_secret("OPENAI_API_KEY"))
+
+
+def _complete(messages: list[dict], max_tokens: int, temperature: float) -> str | None:
+    """OpenAI 호출 공통 처리. 실패 시 조용히 None을 반환한다(상위에서 폴백)."""
+    try:
+        from openai import OpenAI
+
+        client = OpenAI(api_key=_get_secret("OPENAI_API_KEY"))
+        response = client.chat.completions.create(
+            model=_get_secret("OPENAI_MODEL") or DEFAULT_MODEL,
+            messages=messages,
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
+    except Exception:
+        return None
+    if not response.choices:
+        return None
+    text = (response.choices[0].message.content or "").strip()
+    return text or None
+
+
+def answer_grounded(question: str, context: str) -> str | None:
+    """웹 검색 없이, 호출자가 제공한 조직 데이터 컨텍스트만 근거로 답변한다."""
+    if not llm_available():
+        return None
+    user_prompt = f"[이 부서의 진단 데이터]\n{context}\n\n[부서장의 질문]\n{question}"
+    return _complete(
+        [
+            {"role": "system", "content": GROUNDED_SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ],
+        max_tokens=600,
+        temperature=0.5,
+    )
+
+
+def summarize_conversation(history: list[tuple[str, str]]) -> str | None:
+    """챗봇 대화 전체를 요점 위주로 요약한다. 다운로드 리포트에서 사용."""
+    if not llm_available() or not history:
+        return None
+    transcript = "\n".join(
+        f"{'부서장' if role == 'user' else '챗봇'}: {text}" for role, text in history
+    )
+    return _complete(
+        [
+            {"role": "system", "content": SUMMARY_SYSTEM_PROMPT},
+            {"role": "user", "content": transcript},
+        ],
+        max_tokens=500,
+        temperature=0.3,
+    )
 
 
 def _search_web(query: str, max_results: int = 4):
@@ -89,25 +170,14 @@ def answer(question: str) -> str | None:
     context = "\n\n".join(context_blocks)
     user_prompt = f"질문: {question}\n\n다음은 웹 검색 결과입니다. 참고하여 답변하세요.\n\n{context}"
 
-    try:
-        from openai import OpenAI
-
-        client = OpenAI(api_key=_get_secret("OPENAI_API_KEY"))
-        response = client.chat.completions.create(
-            model=_get_secret("OPENAI_MODEL") or DEFAULT_MODEL,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt},
-            ],
-            max_tokens=700,
-            temperature=0.4,
-        )
-    except Exception:
-        return None
-
-    if not response.choices:
-        return None
-    text = (response.choices[0].message.content or "").strip()
+    text = _complete(
+        [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ],
+        max_tokens=700,
+        temperature=0.4,
+    )
     if not text:
         return None
 

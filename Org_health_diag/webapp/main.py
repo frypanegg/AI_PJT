@@ -52,7 +52,8 @@ templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 @app.on_event("startup")
 def startup():
-    """DB가 비어 있으면 기본 더미 데이터로 부트스트랩한다."""
+    """스키마를 최신 상태로 맞추고(멱등), DB가 비어 있으면 기본 더미 데이터로 부트스트랩한다."""
+    db.init_schema()
     if not db.db_exists():
         seed.bootstrap()
 
@@ -79,6 +80,16 @@ def require_org(request: Request) -> str:
 def require_admin(request: Request):
     if not is_admin(request):
         raise HTTPException(status_code=401, detail="관리자 로그인이 필요합니다.")
+
+
+def chat_session_id(request: Request) -> str:
+    """대화 기록을 담을 세션 토큰. 세션 쿠키에는 이 짧은 토큰만 두고,
+    실제 대화 내용은 DB(chat_messages)에 저장해 쿠키 4KB 한도를 피한다."""
+    sid = request.session.get("chat_sid")
+    if not sid:
+        sid = secrets.token_urlsafe(16)
+        request.session["chat_sid"] = sid
+    return sid
 
 
 # ---------------------------------------------------------------------------
@@ -149,6 +160,9 @@ def logout(request: Request):
     if org_key:
         org = analytics.get_org(org_key)
         analytics.log_access(org_key, org["org"] if org else None, "logout")
+    sid = request.session.get("chat_sid")
+    if sid:
+        analytics.clear_chat_history(sid)
     request.session.clear()
     return RedirectResponse("/", status_code=303)
 
@@ -212,7 +226,10 @@ def api_download(request: Request):
 
     import pandas as pd
 
-    history = request.session.get("chat_history", [])
+    sid = chat_session_id(request)
+    history = analytics.get_chat_history(sid)
+    chat_pairs = [(m["role"], m["text"]) for m in history]
+    chat_summary = chat_service.summarize_history(chat_pairs) if chat_pairs else None
     html = report_export.build_report_html(
         org=payload["org"],
         company=payload["company"],
@@ -220,7 +237,8 @@ def api_download(request: Request):
         top_pos_df=pd.DataFrame(payload["top_pos"]),
         top_neg_df=pd.DataFrame(payload["top_neg"]),
         executive_summary=payload["executive_summary"],
-        chat_history=[(m["role"], m["text"]) for m in history],
+        chat_history=chat_pairs,
+        chat_summary=chat_summary,
         year=payload["year"],
     )
     analytics.log_access(org_key, payload["org"], "report_download")
@@ -237,9 +255,10 @@ def api_download(request: Request):
 
 @app.post("/api/chat/history")
 async def api_save_history(request: Request):
-    require_org(request)
+    org_key = require_org(request)
     body = await request.json()
-    request.session["chat_history"] = body.get("history", [])[-40:]
+    sid = chat_session_id(request)
+    analytics.save_chat_history(sid, org_key, body.get("history", [])[-60:])
     return JSONResponse({"ok": True})
 
 

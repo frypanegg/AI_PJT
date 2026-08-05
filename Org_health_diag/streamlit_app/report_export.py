@@ -22,6 +22,7 @@ def build_report_html(
     executive_summary: str,
     chat_history: list,
     year: str = "2026",
+    chat_summary: str | None = None,
 ) -> str:
     generated_at = dt.datetime.now().strftime("%Y-%m-%d %H:%M")
 
@@ -43,6 +44,28 @@ def build_report_html(
     else:
         chat_rows = "<p>대화 기록이 없습니다.</p>"
 
+    if chat_summary:
+        summary_html = _esc(chat_summary).replace(chr(10), "<br>")
+        chat_section = f"""
+<h2>조직운영 챗봇 대화 요약</h2>
+<div class="summary-box">{summary_html}</div>
+<details class="raw-chat">
+<summary>전체 대화 원문 보기</summary>
+{chat_rows}
+</details>
+"""
+    elif chat_history:
+        chat_section = f"""
+<h2>조직운영 챗봇 대화 기록</h2>
+<p class="note">요약을 생성하지 못해 대화 원문을 표시합니다.</p>
+{chat_rows}
+"""
+    else:
+        chat_section = f"""
+<h2>조직운영 챗봇 대화 기록</h2>
+{chat_rows}
+"""
+
     return f"""<!doctype html>
 <html lang="ko">
 <head>
@@ -56,6 +79,10 @@ h2 {{ font-size: 1.2rem; margin-top: 2rem; }}
 .msg {{ margin-bottom: 10px; padding: 8px 12px; border-radius: 8px; background: #f4f6f8; }}
 .msg .role {{ font-weight: 700; margin-right: 6px; }}
 .msg.user {{ background: #eaf3ff; }}
+.summary-box {{ background: #eaf3ff; border-radius: 8px; padding: 12px 16px; }}
+.raw-chat {{ margin-top: 1rem; }}
+.raw-chat summary {{ cursor: pointer; color: #555; font-size: 0.9rem; }}
+.note {{ color: #888; font-size: 0.85rem; }}
 .footer {{ margin-top: 3rem; color: #777; font-size: 0.85rem; border-top: 1px solid #ddd; padding-top: 1rem; }}
 </style>
 </head>
@@ -76,8 +103,7 @@ h2 {{ font-size: 1.2rem; margin-top: 2rem; }}
 <h2>AI Executive Summary</h2>
 <p>{_esc(executive_summary)}</p>
 
-<h2>조직운영 챗봇 대화 기록</h2>
-{chat_rows}
+{chat_section}
 
 <div class="footer">
 본 리포트는 시연용 데모이며 평가 점수·등급·순위를 제공하지 않습니다. AI 해석 문장은 사전 정의된
