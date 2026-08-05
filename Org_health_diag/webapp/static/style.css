@@ -182,13 +182,24 @@ h1, h2, h3 { line-height: 1.32; font-family: "Hanken Grotesk", "Noto Sans KR", s
 /* ---------- 비율 막대 ---------- */
 .ratio-row { display: flex; align-items: center; gap: 10px; }
 .ratio-bar {
-  flex: 1 1 auto; display: flex; height: 32px; border-radius: 8px; overflow: hidden;
+  /* min-width:0이 없으면 flex 아이템은 기본값(min-width:auto)에 따라 내부 텍스트의
+     min-content 폭보다 좁아지지 못해, 좁은 카드에서 막대 전체가 카드 밖으로
+     밀려나온다. 세그먼트 폭은 %로 이미 정해져 있으니 그 이상 커지지 않게 막는다. */
+  flex: 1 1 auto; min-width: 0; display: flex; height: 32px; border-radius: 8px; overflow: hidden;
   font-size: .87rem; font-weight: 700; color: #fff;
 }
-.ratio-bar .seg { display: flex; align-items: center; justify-content: center; white-space: nowrap; }
+.ratio-bar .seg {
+  display: flex; align-items: center; justify-content: center; white-space: nowrap;
+  min-width: 0; overflow: hidden;
+}
 .ratio-bar .seg.pos { background: var(--pos); }
 .ratio-bar .seg.neu { background: var(--neu); }
 .ratio-bar .seg.neg { background: var(--neg); }
+.outside-slot {
+  /* 라벨 개수(0~2개)와 무관하게 항상 같은 폭을 차지해, 옆 .ratio-bar 폭이
+     카드마다 달라지지 않도록 고정한다. */
+  flex: 0 0 104px; display: flex; flex-direction: column; gap: 2px;
+}
 .ratio-row .outside { font-size: .84rem; font-weight: 800; white-space: nowrap; }
 .ratio-bar.slim { height: 12px; border-radius: 4px; }
 
@@ -197,8 +208,12 @@ h1, h2, h3 { line-height: 1.32; font-family: "Hanken Grotesk", "Noto Sans KR", s
 .item:last-child { border-bottom: none; padding-bottom: 4px; }
 .item-title { font-size: 1.15rem; font-weight: 800; font-family: "Hanken Grotesk", "Noto Sans KR", sans-serif; }
 .item-meta { color: var(--muted); font-size: .85rem; margin-top: 2px; }
-.item-comment { margin: 10px 0 4px; }
-.item-direction { color: var(--muted); font-size: .91rem; }
+/* 설명 문단의 줄바꿈 폭을 막대(.ratio-bar) 폭에 맞춘다.
+   .ratio-row는 항상 .outside-slot(104px) + gap(10px)만큼 오른쪽을 비워두는데,
+   문단은 이 여백을 모르고 카드 전체 폭까지 줄바꿈되어 막대보다 더 오른쪽까지
+   길어져 보였다. */
+.item-comment { margin: 10px 0 4px; max-width: calc(100% - 114px); }
+.item-direction { color: var(--muted); font-size: .91rem; max-width: calc(100% - 114px); }
 
 /* ---------- 대분류 좌우 분할 ---------- */
 .major-panel-title {

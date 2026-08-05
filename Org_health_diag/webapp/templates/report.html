@@ -3,8 +3,6 @@
 {% block topbar_right %}<a class="btn" href="/logout">로그아웃</a>{% endblock %}
 
 {% macro ratio_bar(r, slim=False) -%}
-  {% set inside = namespace(items=[]) %}
-  {% set outside = namespace(items=[]) %}
   <div class="ratio-row">
     <div class="ratio-bar {% if slim %}slim{% endif %}">
       {% for key, cls in [('긍정','pos'), ('중립','neu'), ('부정','neg')] %}
@@ -15,11 +13,15 @@
       {% endfor %}
     </div>
     {%- if not slim %}
-      {% for key, cls in [('긍정','pos'), ('중립','neu'), ('부정','neg')] %}
-        {% if r[key] < 11 and r[key] > 0 %}
-          <span class="outside" style="color: var(--{{ cls }})">{{ key }} {{ r[key] }}%</span>
-        {% endif %}
-      {% endfor %}
+      {# 값이 작아 막대 밖에 표시하는 라벨은 항상 같은 폭의 칸에 넣는다.
+         그래야 라벨 유무와 상관없이 막대(.ratio-bar) 자체 폭이 카드마다 흔들리지 않는다. #}
+      <div class="outside-slot">
+        {% for key, cls in [('긍정','pos'), ('중립','neu'), ('부정','neg')] %}
+          {% if r[key] < 11 and r[key] > 0 %}
+            <span class="outside" style="color: var(--{{ cls }})">{{ key }} {{ r[key] }}%</span>
+          {% endif %}
+        {% endfor %}
+      </div>
     {% endif -%}
   </div>
 {%- endmacro %}

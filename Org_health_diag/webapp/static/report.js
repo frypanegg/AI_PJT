@@ -14,6 +14,31 @@
     });
   });
 
+  /* ---------- 막대 안 라벨이 실제로 안 들어가면 막대 밖으로 옮긴다 ----------
+     서버 템플릿은 비중(%) 값만 보고 안/밖을 정하는데, 같은 30%도 좁은 2단
+     카드에서는 "부정 17.4%" 같은 글자가 안 들어갈 수 있다. overflow:hidden
+     때문에 글자가 그냥 안 보이게 잘리므로, 실제 렌더링 폭을 재서 넘치면
+     막대 옆 outside-slot으로 옮긴다. */
+  function reconcileBarLabels() {
+    document.querySelectorAll('.ratio-row').forEach(row => {
+      const slot = row.querySelector('.outside-slot');
+      if (!slot) return;
+      row.querySelectorAll('.ratio-bar .seg').forEach(seg => {
+        const text = seg.textContent.trim();
+        if (!text || seg.scrollWidth <= seg.clientWidth + 1) return;
+        const cls = seg.classList.contains('pos') ? 'pos'
+          : seg.classList.contains('neu') ? 'neu' : 'neg';
+        seg.textContent = '';
+        const span = document.createElement('span');
+        span.className = 'outside';
+        span.style.color = `var(--${cls})`;
+        span.textContent = text;
+        slot.appendChild(span);
+      });
+    });
+  }
+  reconcileBarLabels();
+
   /* ---------- 문항 필터 · 정렬 ---------- */
   const midFilter = document.getElementById('midFilter');
   const sortBy = document.getElementById('sortBy');
