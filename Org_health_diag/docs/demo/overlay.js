@@ -11,10 +11,25 @@
   if (window.__demoInstalled) return;
   window.__demoInstalled = true;
 
+  // file:// 처럼 sessionStorage 가 막힌 출처에서도 최소한 같은 문서 안에서는
+  // 상태가 유지되도록 메모리 사본을 함께 둔다.
+  const MEM = {};
   const SS = {
-    get(k, d) { try { const v = sessionStorage.getItem("dm." + k); return v ? JSON.parse(v) : d; } catch { return d; } },
-    set(k, v) { try { sessionStorage.setItem("dm." + k, JSON.stringify(v)); } catch {} },
-    del(k) { try { sessionStorage.removeItem("dm." + k); } catch {} },
+    get(k, d) {
+      try {
+        const v = sessionStorage.getItem("dm." + k);
+        if (v !== null) return JSON.parse(v);
+      } catch {}
+      return k in MEM ? MEM[k] : d;
+    },
+    set(k, v) {
+      MEM[k] = v;
+      try { sessionStorage.setItem("dm." + k, JSON.stringify(v)); } catch {}
+    },
+    del(k) {
+      delete MEM[k];
+      try { sessionStorage.removeItem("dm." + k); } catch {}
+    },
   };
 
   const CSS = `
@@ -84,10 +99,15 @@
 
   function build() {
     if (document.getElementById("dm-root")) return;
+    // document_start 에는 documentElement 조차 없을 수 있다. 그러면 조용히 물러나고
+    // 아래 관찰자가 생기는 즉시 다시 부른다.
+    const host = document.documentElement;
+    if (!host) return;
+
     const st = document.createElement("style");
     st.textContent = CSS;
-    // document_start 시점에는 head가 아직 없을 수 있다
-    (document.head || document.documentElement).appendChild(st);
+    // 이 시점에 head가 아직 없을 수 있다
+    (document.head || host).appendChild(st);
 
     const root = document.createElement("div");
     root.id = "dm-root";
@@ -152,6 +172,10 @@
     const root = $("dm-root");
     root.classList.add("dm-noanim");
 
+    // 처음 보는 출처(첫 페이지, 또는 다운로드한 파일을 file:// 로 열 때)에서는
+    // 검정으로 시작한다. 그러지 않으면 앱/문서가 그려지는 첫 순간이 그대로 노출된다.
+    if (window.__DEMO_START_BLACK && SS.get("fade", null) === null) SS.set("fade", true);
+
     const cv = SS.get("cover", null);
     if (cv) paintCover(cv, false);
     const cp = SS.get("chip", null);
@@ -201,6 +225,16 @@
     async fadeIn() { SS.set("fade", false); $("dm-fade").classList.remove("on"); await sleep(620); },
   };
 
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", build);
-  else build();
+  // 설치를 DOMContentLoaded까지 미루면, 그 전에 그려지는 첫 프레임에 앱 화면이
+  // 그대로 노출된다 (페이지 이동 중 한 프레임 번쩍임의 원인). 가능한 가장 이른
+  // 시점에 설치하고, 아직 이르면 DOM이 만들어지는 즉시 다시 시도한다.
+  build();
+  if (!document.getElementById("dm-root")) {
+    const obs = new MutationObserver(() => {
+      build();
+      if (document.getElementById("dm-root")) obs.disconnect();
+    });
+    obs.observe(document, { childList: true, subtree: true });
+  }
+  document.addEventListener("DOMContentLoaded", build);
 })();
