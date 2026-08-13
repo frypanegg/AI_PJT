@@ -1,16 +1,43 @@
-/* 리포트 화면 상호작용: 탭 · 문항 필터/정렬 · 3개년 추이 차트 · 챗봇 */
+/* 리포트 화면 상호작용: 사이드바 스크롤 이동 · 문항 필터/정렬 · 다개년 추이 차트 · 챗봇 */
 (function () {
   const COLORS = { '긍정': '#3E8E5A', '중립': '#B0B7C3', '부정': '#D9534F' };
   const R = window.REPORT || {};
 
-  /* ---------- 대분류 탭 ---------- */
-  const tabs = document.querySelectorAll('#majorTabs button');
-  tabs.forEach(btn => btn.addEventListener('click', () => {
-    tabs.forEach(b => b.classList.toggle('active', b === btn));
-    document.querySelectorAll('.major-panel').forEach(p => {
-      p.style.display = (p.dataset.major === btn.dataset.major) ? '' : 'none';
+  /* ---------- 사이드바 바로가기: 점프 대신 스크롤 애니메이션 ---------- */
+  document.querySelectorAll('.sidebar nav a[href^="#"], .sidebar .cta[href^="#"]').forEach(link => {
+    link.addEventListener('click', (e) => {
+      const target = document.querySelector(link.getAttribute('href'));
+      if (!target) return;
+      e.preventDefault();
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      window.history.pushState(null, '', link.getAttribute('href'));
     });
-  }));
+  });
+
+  /* ---------- 막대 안 라벨이 실제로 안 들어가면 막대 밖으로 옮긴다 ----------
+     서버 템플릿은 비중(%) 값만 보고 안/밖을 정하는데, 같은 30%도 좁은 2단
+     카드에서는 "부정 17.4%" 같은 글자가 안 들어갈 수 있다. overflow:hidden
+     때문에 글자가 그냥 안 보이게 잘리므로, 실제 렌더링 폭을 재서 넘치면
+     막대 옆 outside-slot으로 옮긴다. */
+  function reconcileBarLabels() {
+    document.querySelectorAll('.ratio-row').forEach(row => {
+      const slot = row.querySelector('.outside-slot');
+      if (!slot) return;
+      row.querySelectorAll('.ratio-bar .seg').forEach(seg => {
+        const text = seg.textContent.trim();
+        if (!text || seg.scrollWidth <= seg.clientWidth + 1) return;
+        const cls = seg.classList.contains('pos') ? 'pos'
+          : seg.classList.contains('neu') ? 'neu' : 'neg';
+        seg.textContent = '';
+        const span = document.createElement('span');
+        span.className = 'outside';
+        span.style.color = `var(--${cls})`;
+        span.textContent = text;
+        slot.appendChild(span);
+      });
+    });
+  }
+  reconcileBarLabels();
 
   /* ---------- 문항 필터 · 정렬 ---------- */
   const midFilter = document.getElementById('midFilter');

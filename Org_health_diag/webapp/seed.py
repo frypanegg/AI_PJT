@@ -3,10 +3,15 @@
 
 `python seed.py` 로 단독 실행하거나, 앱 기동 시 DB가 비어 있으면 자동 호출된다.
 관리자 화면에서 새 엑셀을 업로드할 때도 이 모듈의 load_workbook을 재사용한다.
+
+연도 시트는 하드코딩하지 않고 워크북에 실제로 들어있는 시트 이름에서 4자리 연도를
+자동으로 찾는다. 예를 들어 올해는 2024~2026 3개 시트이지만, 내년에 2027 시트가
+추가된 4개 시트짜리 파일을 업로드해도 코드 수정 없이 그대로 적재된다.
 """
 
 import hashlib
 import os
+import re
 import sys
 
 import pandas as pd
@@ -25,7 +30,7 @@ from catalog import (  # noqa: E402
 
 import db  # noqa: E402
 
-YEARS = ["2024", "2025", "2026"]
+YEAR_SHEET_RE = re.compile(r"^(19|20)\d{2}$")
 
 DEFAULT_EXCEL = os.path.join(
     os.path.dirname(__file__),
@@ -62,14 +67,27 @@ def bucket_of(value) -> str | None:
     return None
 
 
+def detect_year_sheets(path: str) -> list[str]:
+    """워크북의 시트 이름 중 4자리 연도(예: 2024, 2027)만 골라 오름차순으로 반환한다."""
+    with pd.ExcelFile(path) as xls:
+        names = xls.sheet_names
+    years = sorted(name for name in names if YEAR_SHEET_RE.match(str(name)))
+    if not years:
+        raise ValueError(
+            "연도 시트를 찾지 못했습니다. 시트 이름이 4자리 연도(예: 2024, 2025, 2026, 2027)여야 합니다."
+        )
+    return years
+
+
 def read_workbook(path: str):
-    """엑셀에서 (responses, open_texts) 행 목록을 만든다."""
+    """엑셀에서 (responses, open_texts, 연도목록) 을 만든다."""
     resp_rows, text_rows = [], []
+    years = detect_year_sheets(path)
 
     with pd.ExcelFile(path) as xls:
-        sheets = {y: pd.read_excel(xls, sheet_name=y, header=None) for y in YEARS}
+        sheets = {y: pd.read_excel(xls, sheet_name=y, header=None) for y in years}
 
-    for year in YEARS:
+    for year in years:
         raw = sheets[year]
         header = [str(c) for c in raw.iloc[0, :].tolist()]
         body = raw.iloc[2:, :].copy()
@@ -98,15 +116,16 @@ def read_workbook(path: str):
                     continue
                 text_rows.append((year, str(company), str(org), qid, str(text)))
 
-    return resp_rows, text_rows
+    return resp_rows, text_rows, years
 
 
 def load_workbook(path: str, replace: bool = True) -> dict:
     """엑셀을 읽어 responses/open_texts 테이블을 채운다. 반환: 적재 통계."""
-    resp_rows, text_rows = read_workbook(path)
+    resp_rows, text_rows, years = read_workbook(path)
     if not resp_rows:
         raise ValueError("적재할 응답 데이터가 없습니다.")
 
+    latest_year = years[-1]
     with db.session() as conn:
         if replace:
             conn.execute("DELETE FROM responses")
@@ -121,10 +140,16 @@ def load_workbook(path: str, replace: bool = True) -> dict:
             text_rows,
         )
         orgs = conn.execute(
-            "SELECT COUNT(DISTINCT org) AS c FROM responses WHERE year='2026'"
+            "SELECT COUNT(DISTINCT org) AS c FROM responses WHERE year=?", (latest_year,)
         ).fetchone()["c"]
 
-    return {"responses": len(resp_rows), "open_texts": len(text_rows), "orgs_2026": orgs}
+    return {
+        "responses": len(resp_rows),
+        "open_texts": len(text_rows),
+        "years": years,
+        "latest_year": latest_year,
+        "orgs_latest_year": orgs,
+    }
 
 
 def seed_orgs_and_admins():
@@ -154,4 +179,5 @@ if __name__ == "__main__":
     stats = bootstrap(path)
     print(f"DB: {db.DB_PATH}")
     print(f"적재 완료 - 응답 {stats['responses']}건, 주관식 {stats['open_texts']}건, "
-          f"2026 조직 {stats['orgs_2026']}개")
+          f"연도 {', '.join(stats['years'])} "
+          f"({stats['latest_year']}년 조직 {stats['orgs_latest_year']}개)")
