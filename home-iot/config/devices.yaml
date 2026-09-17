@@ -1,0 +1,302 @@
+# home-core 기기 레지스트리
+#
+# 원칙 세 가지
+# 1) 도어락, 진단·설정용 엔티티는 넣지 않는다 (LLM/대시보드에 노출할 것만).
+# 2) 조명 씬은 토글이 아니라 켜기/끄기 쌍을 command_targets 로 매핑한다.
+#    -> on_off=false 를 몇 번 보내도 "끄기 씬"만 불린다 (멱등).
+# 3) 씬 스위치는 실행 후 항상 off 로 돌아간다. entity_id 를 비워두어
+#    상태를 아예 보고하지 않게 한다 ("꺼짐"으로 잘못 읽히는 것을 막는다).
+
+devices:
+  # ---------------- 거실 ----------------
+  living_room_light:
+    name: 거실 조명
+    room: 거실
+    kind: light
+    note: Aqara E1 스위치 (Matter 씬 경유). 상태 읽기 불가.
+    capabilities:
+      on_off:
+        type: bool
+        writable: true
+        source:
+          members:
+            "on": switch.geosil_kyeogi
+            "off": switch.geosil_ggeugi
+          command_targets:
+            "true": switch.geosil_kyeogi
+            "false": switch.geosil_ggeugi
+
+  living_room_stand:
+    name: 거실 스탠드
+    room: 거실
+    kind: light
+    capabilities:
+      on_off:
+        type: bool
+        writable: true
+        source: {entity_id: light.geosil_stand}
+      brightness:
+        type: number
+        unit: "%"
+        writable: true
+        min: 0
+        max: 100
+        ha_min: 0
+        ha_max: 255
+        source: {entity_id: light.geosil_stand, attribute: brightness}
+      color_temp:
+        type: number
+        unit: K
+        writable: true
+        source: {entity_id: light.geosil_stand, attribute: color_temp_kelvin}
+
+  living_room_ac:
+    name: 거실 에어컨
+    room: 거실
+    kind: climate
+    capabilities:
+      on_off:
+        type: bool
+        writable: true
+        source: {entity_id: climate.geosil_aircon}
+      target_temperature:
+        type: number
+        unit: "°C"
+        writable: true
+        min: 18
+        max: 30
+        service: climate.set_temperature
+        source: {entity_id: climate.geosil_aircon, attribute: temperature}
+
+  air_purifier:
+    name: 공기청정기
+    room: 거실
+    kind: fan
+    capabilities:
+      on_off:
+        type: bool
+        writable: true
+        source: {entity_id: fan.gonggi_cheongjeonggi}
+      pm25:
+        type: number
+        unit: "µg/m³"
+        source: {entity_id: sensor.gonggi_cheongjeonggi_pm25}
+
+  living_room_humidity:
+    name: 거실 습도
+    room: 거실
+    kind: sensor
+    capabilities:
+      humidity:
+        type: number
+        unit: "%"
+        source: {entity_id: sensor.geosil_humidity}
+
+  living_room_air_quality:
+    name: 거실 공기질
+    room: 거실
+    kind: sensor
+    capabilities:
+      air_quality:
+        type: string
+        source: {entity_id: sensor.geosil_air_quality}
+
+  living_room_power:
+    name: 거실 전력 사용량
+    room: 거실
+    kind: sensor
+    capabilities:
+      power:
+        type: number
+        unit: W
+        source: {entity_id: sensor.geosil_power}
+
+  # ---------------- 주방 ----------------
+  kitchen_light:
+    name: 주방 조명
+    room: 주방
+    kind: light
+    note: 싱크대 + 식탁. 상태 읽기 불가.
+    capabilities:
+      on_off:
+        type: bool
+        writable: true
+        source:
+          members:
+            "on": switch.jubang_kyeogi
+            "off": switch.jubang_ggeugi
+          command_targets:
+            "true": switch.jubang_kyeogi
+            "false": switch.jubang_ggeugi
+
+  fridge_express:
+    name: 냉장고 쾌속냉동
+    room: 주방
+    kind: appliance
+    capabilities:
+      on_off:
+        type: bool
+        writable: true
+        source: {entity_id: switch.naengjanggo_express}
+
+  fridge_door:
+    name: 냉장실 문
+    room: 주방
+    kind: sensor
+    capabilities:
+      open:
+        type: bool
+        source: {entity_id: binary_sensor.naengjangsil_door}
+
+  freezer_door:
+    name: 냉동실 문
+    room: 주방
+    kind: sensor
+    capabilities:
+      open:
+        type: bool
+        source: {entity_id: binary_sensor.naengdongsil_door}
+
+  # ---------------- 세탁실 ----------------
+  washer:
+    name: 세탁기
+    room: 세탁실
+    kind: appliance
+    capabilities:
+      status:
+        type: string
+        source: {entity_id: sensor.setakgi_status}
+      finish_at:
+        type: timestamp
+        note: LG 는 "남은 시간"이 아니라 ISO 종료 *시각*을 준다. 빼기 연산 주의.
+        source: {entity_id: sensor.setakgi_finish_time}
+      power:
+        type: number
+        unit: W
+        source: {entity_id: sensor.setakgi_power}
+
+  dryer:
+    name: 건조기
+    room: 세탁실
+    kind: appliance
+    capabilities:
+      status:
+        type: string
+        source: {entity_id: sensor.geonjogi_status}
+      finish_at:
+        type: timestamp
+        note: 종료 *시각* (ISO). 세탁기와 동일.
+        source: {entity_id: sensor.geonjogi_finish_time}
+
+  # ---------------- 안방 ----------------
+  bedroom_ac:
+    name: 안방 에어컨
+    room: 안방
+    kind: climate
+    capabilities:
+      on_off:
+        type: bool
+        writable: true
+        source: {entity_id: climate.anbang_aircon}
+      target_temperature:
+        type: number
+        unit: "°C"
+        writable: true
+        min: 18
+        max: 30
+        service: climate.set_temperature
+        source: {entity_id: climate.anbang_aircon, attribute: temperature}
+
+  bedroom_temperature:
+    name: 안방 온도
+    room: 안방
+    kind: sensor
+    capabilities:
+      temperature:
+        type: number
+        unit: "°C"
+        source: {entity_id: sensor.anbang_temperature}
+
+  # ---------------- 화장실 ----------------
+  bathroom_light:
+    name: 화장실 조명
+    room: 화장실
+    kind: light
+    note: 상태 읽기 불가.
+    capabilities:
+      on_off:
+        type: bool
+        writable: true
+        source:
+          members:
+            "on": switch.hwajangsil_kyeogi
+            "off": switch.hwajangsil_ggeugi
+          command_targets:
+            "true": switch.hwajangsil_kyeogi
+            "false": switch.hwajangsil_ggeugi
+
+  # ---------------- 베란다 ----------------
+  balcony_light:
+    name: 베란다 조명
+    room: 베란다
+    kind: light
+    note: 상태 읽기 불가. 실물 점등 확인 완료.
+    capabilities:
+      on_off:
+        type: bool
+        writable: true
+        source:
+          members:
+            "on": switch.beranda_kyeogi
+            "off": switch.beranda_ggeugi
+          command_targets:
+            "true": switch.beranda_kyeogi
+            "false": switch.beranda_ggeugi
+
+  # ---------------- 집 전체 ----------------
+  all_lights:
+    name: 모든 조명
+    room: 전체
+    kind: light
+    note: 집 전체 조명 씬. 상태 읽기 불가.
+    capabilities:
+      on_off:
+        type: bool
+        writable: true
+        source:
+          members:
+            "on": switch.jeonche_kyeogi
+            "off": switch.jeonche_ggeugi
+          command_targets:
+            "true": switch.jeonche_kyeogi
+            "false": switch.jeonche_ggeugi
+
+  home_power:
+    name: 전체 전력 사용량
+    room: 전체
+    kind: sensor
+    capabilities:
+      power:
+        type: number
+        unit: W
+        source: {entity_id: sensor.home_total_power}
+
+  home_pm10:
+    name: 실내 PM10
+    room: 전체
+    kind: sensor
+    capabilities:
+      pm10:
+        type: number
+        unit: "µg/m³"
+        source: {entity_id: sensor.home_pm10}
+
+  home_pm1:
+    name: 실내 PM1
+    room: 전체
+    kind: sensor
+    capabilities:
+      pm1:
+        type: number
+        unit: "µg/m³"
+        source: {entity_id: sensor.home_pm1}
